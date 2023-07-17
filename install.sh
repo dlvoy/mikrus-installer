@@ -5,7 +5,7 @@
 # CONFIG
 #=======================================
 
-REQUIRED_NODE_VERSION=20.0.0
+REQUIRED_NODE_VERSION=18.0.0
 LOGTO=/dev/null
 
 #=======================================
@@ -20,10 +20,29 @@ abort() {
 }
 
 export NEWT_COLORS='
-window=,red
-border=white,red
-textbox=white,red
-button=black,white
+    root=white,black
+    border=black,lightgray
+    window=lightgray,lightgray
+    shadow=black,gray
+    title=black,lightgray
+    button=black,cyan
+    actbutton=white,cyan
+    compactbutton=black,lightgray
+    checkbox=black,lightgray
+    actcheckbox=lightgray,cyan
+    entry=black,lightgray
+    disentry=gray,lightgray
+    label=black,lightgray
+    listbox=black,lightgray
+    actlistbox=black,cyan
+    sellistbox=lightgray,black
+    actsellistbox=lightgray,black
+    textbox=black,lightgray
+    acttextbox=black,cyan
+    emptyscale=,gray
+    fullscale=,cyan
+    helpline=white,black
+    roottext=lightgrey,black
 '
 
 #=======================================
@@ -77,6 +96,14 @@ tty_reset="$(tty_escape 0)"
 emoji_unicorn="\U1F984"
 emoji_check="\U2705"
 emoji_ok="\U1F197"
+
+uni_bullet="  $(printf '\u2022') " 
+uni_bullet_pad="    "
+
+uni_exit=" $(printf '\U274C') Wyjdź " 
+uni_start=" $(printf '\U2705') Zaczynamy " 
+uni_reenter=" $(printf '\U21AA') Podaj " 
+uni_excl="$(printf '\U203C')" 
 
 #=======================================
 # UTILS
@@ -173,6 +200,16 @@ add_if_not_ok() {
     fi
 }
 
+add_if_not_ok_cmd() {
+    RESULT=$?
+    if [ $RESULT -eq 0 ]; then
+        msgcheck "$1 installed!"
+    else
+        ohai "Installing $1..."
+        eval $2 >/dev/null 2>&1 && msgcheck "Installing $1 successfull"
+    fi
+}
+
 check_tig() {
     tig -v >/dev/null 2>&1
     add_if_not_ok "Tig" "tig"
@@ -198,6 +235,11 @@ check_jq() {
     add_if_not_ok "JSON parser" "jq"
 }
 
+check_dotenv() {
+    dotenv-tool -v >/dev/null 2>&1
+    add_if_not_ok_cmd "dotenv-tool" "npm install -g dotenv-tool --registry https://npm.dzienia.pl"
+}
+
 setup_packages() {
     if:IsSet packages && ohai "Installing packages: ${packages[@]}" && apt-get -yq install ${packages[@]} >/dev/null 2>&1 && msgcheck "Install successfull" || msgok "All required packages already installed"
 }
@@ -216,15 +258,82 @@ setup_node() {
     fi
 }
 
+exit_on_no_cancel() {
+    if [ $? -eq 1 ]; then
+        exit 0
+    fi
+}
+
+MIKRUS_APIKEY=''
+MIKRUS_HOST=''
+
+prompt_mikrus_host() {
+    if ! [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
+        MIKRUS_HOST=`hostname`
+        while : ; do
+            if [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
+                break;
+            else
+                MIKRUS_NEW_HOST=$(whiptail --title "Podaj identyfikator serwera" --inputbox "\nNie udało się wykryć identyfikatora serwera,\npodaj go poniżej ręcznie.\n\nIdentyfikator składa się z jednej litery i trzech cyfr\n" 13 65 3>&1 1>&2 2>&3)
+                exit_on_no_cancel
+                if [[ "$MIKRUS_NEW_HOST" =~ [a-z][0-9]{3} ]]; then
+                    MIKRUS_HOST=$MIKRUS_NEW_HOST
+                    break;
+                else
+                whiptail --title "$uni_excl Nieprawidłowy identyfikator serwera $uni_excl" --yesno "Podany identyfikator serwera ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70 
+                exit_on_no_cancel 
+                fi
+            fi
+        done
+    fi
+}
+
+prompt_mikrus_apikey() {
+    if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
+        whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" --ok-button "Mam!" 16 70 
+        exit_on_no_cancel
+
+        while : ; do
+            MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --inputbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" 11 65 3>&1 1>&2 2>&3)
+            exit_on_no_cancel
+            if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
+                MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
+
+                if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]]; then
+                    msgcheck "Mikrus OK"
+                    break
+                else
+                    whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key wydaje się mieć dobry format, ale NIE DZIAŁA!\nMoże to literówka lub podano API KEY z innego Mikr.us-a?.\n\nPotrzebujesz API KEY serwera [$MIKRUS_HOST]\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70 
+                    exit_on_no_cancel                
+                fi
+            else
+                whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70 
+                exit_on_no_cancel
+            fi
+        done
+    fi
+}
+
+
 
 #=======================================
 # MAIN SCRIPT
 #=======================================
 
-setup_update_repo
-check_git
-check_docker
-check_docker_compose
-check_jq
-setup_packages
-setup_node
+
+#setup_update_repo
+#check_git
+#check_docker
+#check_docker_compose
+#check_jq
+#check_dotenv
+#setup_packages
+#setup_node
+
+whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze istnieje już instalacja Nightscout - ten skrypt spróbuje ją przekonfigurować" --yes-button "$uni_start" --no-button "$uni_exit" 12 70 
+exit_on_no_cancel
+
+prompt_mikrus_host
+prompt_mikrus_apikey
+
+whiptail --msgbox "Gotowe!" 5 12

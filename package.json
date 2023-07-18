@@ -4,7 +4,7 @@
   "description": "Nightscout installer for mikr.us VPS",
   "main": "index.js",
   "scripts": {
-    "build": "node ./build.js"
+    "build": "node ./tools/build.js"
   },
   "author": "Dominik Dzienia <dominik.dzienia@gmail.com>",
   "license": "MIT"

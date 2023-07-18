@@ -264,6 +264,23 @@ exit_on_no_cancel() {
     fi
 }
 
+setup_users() {
+    id -u mongodb &>/dev/null
+    if [ $RESULT -eq 0 ]; then
+        msgcheck "Mongo DB user detected"
+    else
+        ohai "Configuring Mongo DB user"
+        useradd -u 1001 -g 0 mongodb
+    fi
+}
+
+setup_dir_structure() {
+    ohai "Configuring folder structure"
+    mkdir -p /srv/nightscout/data/mongodb
+    mkdir -p /srv/nightscout/config
+    chown -R mongodb:root /srv/nightscout/data/mongodb
+}
+
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
 
@@ -274,7 +291,7 @@ prompt_mikrus_host() {
             if [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
                 break;
             else
-                MIKRUS_NEW_HOST=$(whiptail --title "Podaj identyfikator serwera" --inputbox "\nNie udało się wykryć identyfikatora serwera,\npodaj go poniżej ręcznie.\n\nIdentyfikator składa się z jednej litery i trzech cyfr\n" 13 65 3>&1 1>&2 2>&3)
+                MIKRUS_NEW_HOST=$(whiptail --title "Podaj identyfikator serwera" --inputbox "\nNie udało się wykryć identyfikatora serwera,\npodaj go poniżej ręcznie.\n\nIdentyfikator składa się z jednej litery i trzech cyfr\n" --cancel-button "Anuluj" 13 65 3>&1 1>&2 2>&3)
                 exit_on_no_cancel
                 if [[ "$MIKRUS_NEW_HOST" =~ [a-z][0-9]{3} ]]; then
                     MIKRUS_HOST=$MIKRUS_NEW_HOST
@@ -294,7 +311,7 @@ prompt_mikrus_apikey() {
         exit_on_no_cancel
 
         while : ; do
-            MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --inputbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" 11 65 3>&1 1>&2 2>&3)
+            MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --inputbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
             exit_on_no_cancel
             if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
                 MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
@@ -321,14 +338,16 @@ prompt_mikrus_apikey() {
 #=======================================
 
 
-#setup_update_repo
-#check_git
-#check_docker
-#check_docker_compose
-#check_jq
-#check_dotenv
-#setup_packages
-#setup_node
+setup_update_repo
+check_git
+check_docker
+check_docker_compose
+check_jq
+check_dotenv
+setup_packages
+setup_node
+setup_users
+setup_dir_structure
 
 whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze istnieje już instalacja Nightscout - ten skrypt spróbuje ją przekonfigurować" --yes-button "$uni_start" --no-button "$uni_exit" 12 70 
 exit_on_no_cancel

@@ -4,6 +4,7 @@
 
 REQUIRED_NODE_VERSION=18.0.0
 LOGTO=/dev/null
+ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 
 #=======================================
 # SETUP
@@ -125,11 +126,11 @@ ohai() {
 }
 
 msgok() {
-    printf "$emoji_ok  $1!\n"
+    printf "$emoji_ok  $1\n"
 }
 
 msgcheck() {
-    printf "$emoji_check  $1!\n"
+    printf "$emoji_check  $1\n"
 }
 
 warn() {
@@ -191,7 +192,7 @@ test_node() {
 add_if_not_ok() {
     RESULT=$?
     if [ $RESULT -eq 0 ]; then
-        msgcheck "$1 installed!"
+        msgcheck "$1 installed"
     else
         packages+=("$2")
     fi
@@ -200,7 +201,7 @@ add_if_not_ok() {
 add_if_not_ok_cmd() {
     RESULT=$?
     if [ $RESULT -eq 0 ]; then
-        msgcheck "$1 installed!"
+        msgcheck "$1 installed"
     else
         ohai "Installing $1..."
         eval $2 >/dev/null 2>&1 && msgcheck "Installing $1 successfull"
@@ -245,7 +246,7 @@ setup_node() {
     test_node
     RESULT=$?
     if [ $RESULT -eq 0 ]; then
-        msgcheck "Node installed in correct version!"
+        msgcheck "Node installed in correct version"
     else
         ohai "Preparing Node.js setup"
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - >/dev/null 2>&1
@@ -275,11 +276,24 @@ setup_dir_structure() {
     ohai "Configuring folder structure"
     mkdir -p /srv/nightscout/data/mongodb
     mkdir -p /srv/nightscout/config
+    mkdir -p /srv/nightscout/config/templates
     chown -R mongodb:root /srv/nightscout/data/mongodb
 }
 
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
+
+source_admin() {
+    if [[ -f $ENV_FILE_ADMIN ]]; then
+        source $ENV_FILE_ADMIN
+        msgok "Imported admin config"
+    fi
+}
+
+prompt_welcome() {
+    whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze istnieje już instalacja Nightscout - ten skrypt spróbuje ją przekonfigurować" --yes-button "$uni_start" --no-button "$uni_exit" 12 70 
+    exit_on_no_cancel
+}
 
 prompt_mikrus_host() {
     if ! [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
@@ -299,6 +313,9 @@ prompt_mikrus_host() {
                 fi
             fi
         done
+
+        ohai "Updating admin config (host)"
+        dotenv-tool -pmr -i $ENV_FILE_ADMIN -- "MIKRUS_HOST=$MIKRUS_HOST"
     fi
 }
 
@@ -325,6 +342,9 @@ prompt_mikrus_apikey() {
                 exit_on_no_cancel
             fi
         done
+
+        ohai "Updating admin config (api key)"
+        dotenv-tool -pmr -i $ENV_FILE_ADMIN -- "MIKRUS_APIKEY=$MIKRUS_APIKEY"
     fi
 }
 

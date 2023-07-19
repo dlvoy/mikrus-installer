@@ -269,6 +269,7 @@ exit_on_no_cancel() {
 
 setup_users() {
     id -u mongodb &>/dev/null
+    RESULT=$?
     if [ $RESULT -eq 0 ]; then
         msgcheck "Mongo DB user detected"
     else
@@ -302,7 +303,12 @@ install_containers() {
 install_containers_progress() {
     created=$(docker container ls -f 'status=created' -f name=ns-server -f name=ns-database | wc -l)
     current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
-    echo $(( ((($current-1)*2 + ($created-1) )*100 / 6) )) 
+    progr=$(( ($current-1)*2 + ($created-1) ))
+    if [ "$progr" -eq "0" ]; then
+        echo $1
+    else
+        echo $(( ($progr*50 / 6)+50 )) 
+    fi
 }
 
 uninstall_containers() {
@@ -486,8 +492,8 @@ processgauge(){
     while true; do
         echo 0
         while kill -0 "$thepid" >/dev/null 2>&1; do
-            if [[ $num -gt 97 ]] ; then num=1; fi
-            eval $2
+            if [[ $num -gt 50 ]] ; then num=50; fi
+            eval $2 $num
             num=$((num+1))
             sleep 0.3
         done

@@ -8,6 +8,9 @@
 REQUIRED_NODE_VERSION=18.0.0
 LOGTO=/dev/null
 ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
+ENV_FILE_NS=/srv/nightscout/config/nightscout.env
+ENV_FILE_DEP=/srv/nightscout/config/deployment.env
+DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
 
 #=======================================
 # SETUP
@@ -102,8 +105,10 @@ uni_bullet="  $(printf '\u2022') "
 uni_bullet_pad="    "
 
 uni_exit=" $(printf '\U274C') Wyjdź " 
-uni_start=" $(printf '\U2705') Zaczynamy " 
-uni_reenter=" $(printf '\U21AA') Podaj " 
+uni_start=" $(printf '\U1F984') Zaczynamy " 
+uni_reenter=" $(printf '\U21AA') Tak "
+uni_noenter=" $(printf '\U2716') Nie " 
+uni_select=" Wybierz "
 uni_excl="$(printf '\U203C')" 
 
 #=======================================
@@ -279,7 +284,6 @@ setup_dir_structure() {
     ohai "Configuring folder structure"
     mkdir -p /srv/nightscout/data/mongodb
     mkdir -p /srv/nightscout/config
-    mkdir -p /srv/nightscout/config/templates
     chown -R mongodb:root /srv/nightscout/data/mongodb
 }
 
@@ -293,8 +297,24 @@ source_admin() {
     fi
 }
 
+download_if_not_exists() {
+    if [[ -f $2 ]]; then
+        msgok "Found $1"
+    else 
+        ohai "Downloading $1..."
+        curl -fsSL -o $2 $3
+        msgcheck "Downloaded $1"
+    fi
+}
+
+download_conf() {
+    download_if_not_exists "deployment config" $ENV_FILE_DEP https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/deployment.env
+    download_if_not_exists "nightscout config" $ENV_FILE_NS https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env
+    download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml
+}
+
 prompt_welcome() {
-    whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze istnieje już instalacja Nightscout - ten skrypt spróbuje ją przekonfigurować" --yes-button "$uni_start" --no-button "$uni_exit" 12 70 
+    whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." --yes-button "$uni_start" --no-button "$uni_exit" 12 70 
     exit_on_no_cancel
 }
 
@@ -324,7 +344,7 @@ prompt_mikrus_host() {
 
 prompt_mikrus_apikey() {
     if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
-        whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" --ok-button "Mam!" 16 70 
+        whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API"  16 70 
         exit_on_no_cancel
 
         while : ; do
@@ -351,13 +371,82 @@ prompt_mikrus_apikey() {
     fi
 }
 
+prompt_api_secret() {
+    API_SECRET=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+
+    
+        if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
+        while : ; do 
+            CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
+            "1)" "Wygeneruj losowo."   \
+            "2)" "Podaj własny."  \
+            --ok-button="$uni_select" --cancel-button="$uni_exit" \
+            3>&2 2>&1 1>&3)
+            exit_on_no_cancel
+
+            case $CHOICE in
+                "1)")   
+                    API_SECRET=$(openssl rand -base64 100 | tr -dc '23456789@ABCDEFGHJKLMNPRSTUVWXYZabcdefghijkmnopqrstuvwxyz' | fold -w 16 | head -n 1)
+                    whiptail --title "Zapisz API SECRET" --msgbox "Zapisz poniższy wygenerowany API SECRET w bezpiecznym miejscu, np.: managerze haseł:\n\n\n              $API_SECRET" 12 50 
+                ;;
+                "2)")
+                    while : ; do   
+                        API_SECRET=$(whiptail --title "Podaj API SECRET" --inputbox "\nWpisz API SECRET do serwera Nightscout:\n${uni_bullet}Upewnij się że masz go zapisanego np.: w managerze haseł\n${uni_bullet}Użyj conajmniej 12 znaków: małych i dużych liter i cyfr\n\n" --cancel-button "Anuluj" 12 75 3>&1 1>&2 2>&3)
+
+        
+                        if [ $? -eq 1 ]; then
+                            break;
+                        fi 
+                        
+                        if [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
+                            break;
+                        else
+                            whiptail --title "$uni_excl Nieprawidłowy API SECRET $uni_excl" --yesno "Podany API SECRET ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73 
+                            if [ $? -eq 1 ]; then
+                                API_SECRET=''
+                                break
+                            fi 
+                        fi
+                    done
+
+                ;;
+            esac
+
+            while [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; do
+                API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --inputbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
+                if [ $? -eq 1 ]; then
+                        API_SECRET=''
+                        break
+                    fi   
+                if [[ "$API_SECRET" == "$API_SECRET_CHECK" ]]; then
+                    ohai "Updating nightscout config (api secret)"
+                    dotenv-tool -pmr -i $ENV_FILE_NS -- "API_SECRET=$API_SECRET"
+                    break 2
+                else
+                    whiptail --title "$uni_excl Nieprawidłowe API SECRET $uni_excl" --yesno "Podana wartości API SECRET różni się od poprzedniej!\nChcesz podać ponownie?\n" --yes-button "$uni_reenter" --no-button "$uni_noenter" 9 60 
+                    if [ $? -eq 1 ]; then
+                        API_SECRET=''
+                        break
+                    fi                
+                fi
+
+            done
+
+
+         done
+        fi
+
+        
+   
+}
+
 
 
 #=======================================
 # MAIN SCRIPT
 #=======================================
 
-setup_update_repo
+#setup_update_repo
 check_git
 check_docker
 check_docker_compose
@@ -367,11 +456,54 @@ setup_packages
 setup_node
 setup_users
 setup_dir_structure
+download_conf
 
 source_admin
 
 prompt_welcome
 prompt_mikrus_host
 prompt_mikrus_apikey
+prompt_api_secret
 
-whiptail --msgbox "Gotowe!" 5 12
+calculate(){
+    docker compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose up -d
+}
+
+showprogress(){                                     
+    start=$1; end=$2; shortest=$3; longest=$4
+
+    for n in $(seq $start $end); do
+        echo $n
+        pause=$(shuf -i ${shortest:=1}-${longest:=3} -n 1)
+        sleep $pause
+    done
+}
+
+processgauge(){                                       
+    process_to_measure=$1
+    message=$2
+    
+    eval $process_to_measure &
+    thepid=$!
+    num=25
+    while true; do
+        showprogress 1 $num 1 3
+        sleep 2
+        while $(ps aux | grep -v 'grep' | grep "$thepid" &>/dev/null); do
+            if [[ $num -gt 97 ]] ; then num=$(( num-1 )); fi
+            showprogress $num $((num+1))
+            num=$((num+1))
+        done
+        showprogress 99 100 3 3
+    done  | whiptail --title "Progress Gauge" --gauge "$message" 6 70 0
+}
+
+
+NS_ID=$(docker ps -a --no-trunc --filter name=^ns-server --format '{{ .ID }}')
+if [[ "$NS_ID" =~ [0-9a-fA-F]{12,} ]]; then
+    whiptail --msgbox "Nigtscout już działa!" 5 12
+else 
+    processgauge calculate "Todo"
+fi
+
+

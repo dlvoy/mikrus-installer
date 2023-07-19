@@ -287,6 +287,35 @@ setup_dir_structure() {
     chown -R mongodb:root /srv/nightscout/data/mongodb
 }
 
+get_docker_status() {
+    ID=$(docker ps -a --no-trunc --filter name="^$1" --format '{{ .ID }}')
+    if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
+        echo $(docker inspect $ID | jq -r ".[0].State.Status")
+    else 
+        echo 'missing'
+    fi
+}
+
+# >/dev/null 2>&1
+
+install_containers() {
+    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >/dev/null 2>&1  
+}
+
+install_containers_progress() {
+    current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
+    echo $(( (($current-1)*100 / 3) )) 
+}
+
+uninstall_containers() {
+    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >/dev/null 2>&1
+}
+
+uninstall_containers_progress() {
+    current=$(docker container ls -f 'status=exited' -f name=ns-server -f name=ns-database | wc -l)
+    echo $(( (($current-1)*100 / 3) ))
+}
+
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
 
@@ -374,72 +403,100 @@ prompt_mikrus_apikey() {
 prompt_api_secret() {
     API_SECRET=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
 
+    if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
+    while : ; do 
+        CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
+        "1)" "Wygeneruj losowo."   \
+        "2)" "Podaj własny."  \
+        --ok-button="$uni_select" --cancel-button="$uni_exit" \
+        3>&2 2>&1 1>&3)
+        exit_on_no_cancel
+
+        case $CHOICE in
+            "1)")   
+                API_SECRET=$(openssl rand -base64 100 | tr -dc '23456789@ABCDEFGHJKLMNPRSTUVWXYZabcdefghijkmnopqrstuvwxyz' | fold -w 16 | head -n 1)
+                whiptail --title "Zapisz API SECRET" --msgbox "Zapisz poniższy wygenerowany API SECRET w bezpiecznym miejscu, np.: managerze haseł:\n\n\n              $API_SECRET" 12 50 
+            ;;
+            "2)")
+                while : ; do   
+                    API_SECRET=$(whiptail --title "Podaj API SECRET" --inputbox "\nWpisz API SECRET do serwera Nightscout:\n${uni_bullet}Upewnij się że masz go zapisanego np.: w managerze haseł\n${uni_bullet}Użyj conajmniej 12 znaków: małych i dużych liter i cyfr\n\n" --cancel-button "Anuluj" 12 75 3>&1 1>&2 2>&3)
+
     
-        if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
-        while : ; do 
-            CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
-            "1)" "Wygeneruj losowo."   \
-            "2)" "Podaj własny."  \
-            --ok-button="$uni_select" --cancel-button="$uni_exit" \
-            3>&2 2>&1 1>&3)
-            exit_on_no_cancel
-
-            case $CHOICE in
-                "1)")   
-                    API_SECRET=$(openssl rand -base64 100 | tr -dc '23456789@ABCDEFGHJKLMNPRSTUVWXYZabcdefghijkmnopqrstuvwxyz' | fold -w 16 | head -n 1)
-                    whiptail --title "Zapisz API SECRET" --msgbox "Zapisz poniższy wygenerowany API SECRET w bezpiecznym miejscu, np.: managerze haseł:\n\n\n              $API_SECRET" 12 50 
-                ;;
-                "2)")
-                    while : ; do   
-                        API_SECRET=$(whiptail --title "Podaj API SECRET" --inputbox "\nWpisz API SECRET do serwera Nightscout:\n${uni_bullet}Upewnij się że masz go zapisanego np.: w managerze haseł\n${uni_bullet}Użyj conajmniej 12 znaków: małych i dużych liter i cyfr\n\n" --cancel-button "Anuluj" 12 75 3>&1 1>&2 2>&3)
-
-        
-                        if [ $? -eq 1 ]; then
-                            break;
-                        fi 
-                        
-                        if [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
-                            break;
-                        else
-                            whiptail --title "$uni_excl Nieprawidłowy API SECRET $uni_excl" --yesno "Podany API SECRET ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73 
-                            if [ $? -eq 1 ]; then
-                                API_SECRET=''
-                                break
-                            fi 
-                        fi
-                    done
-
-                ;;
-            esac
-
-            while [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; do
-                API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --inputbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
-                if [ $? -eq 1 ]; then
-                        API_SECRET=''
-                        break
-                    fi   
-                if [[ "$API_SECRET" == "$API_SECRET_CHECK" ]]; then
-                    ohai "Updating nightscout config (api secret)"
-                    dotenv-tool -pmr -i $ENV_FILE_NS -- "API_SECRET=$API_SECRET"
-                    break 2
-                else
-                    whiptail --title "$uni_excl Nieprawidłowe API SECRET $uni_excl" --yesno "Podana wartości API SECRET różni się od poprzedniej!\nChcesz podać ponownie?\n" --yes-button "$uni_reenter" --no-button "$uni_noenter" 9 60 
                     if [ $? -eq 1 ]; then
-                        API_SECRET=''
-                        break
-                    fi                
-                fi
+                        break;
+                    fi 
+                    
+                    if [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
+                        break;
+                    else
+                        whiptail --title "$uni_excl Nieprawidłowy API SECRET $uni_excl" --yesno "Podany API SECRET ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73 
+                        if [ $? -eq 1 ]; then
+                            API_SECRET=''
+                            break
+                        fi 
+                    fi
+                done
 
-            done
+            ;;
+        esac
+
+        while [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; do
+            API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --inputbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
+            if [ $? -eq 1 ]; then
+                    API_SECRET=''
+                    break
+                fi   
+            if [[ "$API_SECRET" == "$API_SECRET_CHECK" ]]; then
+                ohai "Updating nightscout config (api secret)"
+                dotenv-tool -pmr -i $ENV_FILE_NS -- "API_SECRET=$API_SECRET"
+                break 2
+            else
+                whiptail --title "$uni_excl Nieprawidłowe API SECRET $uni_excl" --yesno "Podana wartości API SECRET różni się od poprzedniej!\nChcesz podać ponownie?\n" --yes-button "$uni_reenter" --no-button "$uni_noenter" 9 60 
+                if [ $? -eq 1 ]; then
+                    API_SECRET=''
+                    break
+                fi                
+            fi
+
+        done
 
 
-         done
-        fi
+     done
+    fi
 
         
    
 }
 
+showprogress(){                                     
+    start=$1; end=$2; shortest=$3; longest=$4
+
+    for n in $(seq $start $end); do
+        echo $n
+        pause=$(shuf -i ${shortest:=1}-${longest:=3} -n 1)
+        sleep $pause
+    done
+}
+
+processgauge(){                                       
+    process_to_measure=$1
+    message=$3
+    lenmsg=$(echo "$4" | wc -l)
+    eval $process_to_measure &
+    thepid=$!
+    num=1
+    while true; do
+        echo 0
+        while kill -0 "$thepid" >/dev/null 2>&1; do
+            if [[ $num -gt 97 ]] ; then num=1; fi
+            eval $2
+            num=$((num+1))
+            sleep 0.3
+        done
+        echo 100
+        break
+    done  | whiptail --title "$3" --gauge "\n  $4\n" $(( $lenmsg +6 )) 70 0
+}
 
 
 #=======================================
@@ -465,48 +522,14 @@ prompt_mikrus_host
 prompt_mikrus_apikey
 prompt_api_secret
 
-install_containers(){
-    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d
-}
+STATUS_NS=$(get_docker_status "ns-server")
 
-showprogress(){                                     
-    start=$1; end=$2; shortest=$3; longest=$4
-
-    for n in $(seq $start $end); do
-        echo $n
-        pause=$(shuf -i ${shortest:=1}-${longest:=3} -n 1)
-        sleep $pause
-    done
-}
-
-processgauge(){                                       
-    process_to_measure=$1
-    message=$2
-    
-    eval $process_to_measure &
-    thepid=$!
-    num=25
-    while true; do
-        showprogress 1 $num 1 3
-        sleep 2
-        while $(ps aux | grep -v 'grep' | grep "$thepid" &>/dev/null); do
-            if [[ $num -gt 97 ]] ; then num=$(( num-1 )); fi
-            showprogress $num $((num+1))
-            num=$((num+1))
-        done
-        showprogress 99 100 3 3
-    done  | whiptail --title "Progress Gauge" --gauge "$message" 6 70 0
-}
-
-
-NS_ID=$(docker ps -a --no-trunc --filter name=^ns-server --format '{{ .ID }}')
-if [[ "$NS_ID" =~ [0-9a-fA-F]{12,} ]]; then
-    whiptail --msgbox "Nigtscout już działa!" 5 12
-else 
-    ##processgauge calculate "Todo"
+whiptail --msgbox "Gotowe! \n $STATUS_NS\n" 8 20
+if [ "$STATUS_NS" = "missing" ]; then
+    ohai "Instalowanie Nightscout..."
+    processgauge install_containers install_containers_progress "Instalowanie usług" "Proszę czekać, trwa instalowanie usług..."
+else
+    msgok "Wykryto uruchomiony Nightscout"
+    processgauge uninstall_containers uninstall_containers_progress "Zatrzymywanie usług" "Proszę czekać, trwa zatrzymywanie usług..."
 fi
-
-whiptail --msgbox "Odpalam" 5 12
-install_containers
-whiptail --msgbox "Gotowe!" 5 12
 

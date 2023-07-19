@@ -31,8 +31,8 @@ prompt_mikrus_host
 prompt_mikrus_apikey
 prompt_api_secret
 
-calculate(){
-    docker compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose up -d
+install_containers(){
+    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d
 }
 
 showprogress(){                                     
@@ -69,7 +69,10 @@ NS_ID=$(docker ps -a --no-trunc --filter name=^ns-server --format '{{ .ID }}')
 if [[ "$NS_ID" =~ [0-9a-fA-F]{12,} ]]; then
     whiptail --msgbox "Nigtscout już działa!" 5 12
 else 
-    processgauge calculate "Todo"
+    ##processgauge calculate "Todo"
 fi
 
+whiptail --msgbox "Odpalam" 5 12
+install_containers
+whiptail --msgbox "Gotowe!" 5 12
 

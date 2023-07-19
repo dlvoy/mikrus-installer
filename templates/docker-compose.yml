@@ -52,5 +52,3 @@ services:
       - ns-tier
     depends_on:
       - mongodb
-    profiles:
-      - admin

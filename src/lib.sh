@@ -300,8 +300,9 @@ install_containers() {
 }
 
 install_containers_progress() {
+    created=$(docker container ls -f 'status=created' -f name=ns-server -f name=ns-database | wc -l)
     current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
-    echo $(( (($current-1)*100 / 3) )) 
+    echo $(( ((($current-1)*2 + ($created-1) )*100 / 6) )) 
 }
 
 uninstall_containers() {

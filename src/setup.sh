@@ -17,9 +17,9 @@ check_git
 check_docker
 check_docker_compose
 check_jq
-check_dotenv
 setup_packages
 setup_node
+check_dotenv
 setup_users
 setup_dir_structure
 download_conf

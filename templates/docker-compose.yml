@@ -3,7 +3,7 @@
 version: "2"
 
 networks:
-  app-tier:
+  ns-tier:
     driver: bridge
 
 services:
@@ -11,13 +11,12 @@ services:
     container_name: ns-database
     mem_limit: 200m
     mem_reservation: 100M
-    cpus: 0.25
     restart: always
     image: "bitnami/mongodb:${NS_MONGODB_TAG}"
     volumes:
       - "${NS_DATA_DIR}/mongodb:/bitnami/mongodb"
     ports:
-      - 27017:27017
+      - ${INTERNAL_MONGO_PORT}:27017
     networks:
       - ns-tier
 
@@ -32,7 +31,7 @@ services:
       - COMPRESSION_LEVEL=9
       - DB_TYPE=mongo
       - DB_HOST=mongodb
-      - DB_PORT=27017
+      - DB_PORT=${INTERNAL_MONGO_PORT}
       - DB_CLEANUP_TIME=10080
     networks:
       - ns-tier
@@ -44,7 +43,6 @@ services:
     restart: always
     mem_limit: 200m
     mem_reservation: 100M
-    cpus: 0.25
     image: "nightscout/cgm-remote-monitor:${NS_NIGHTSCOUT_TAG}"
     env_file:
       - ${NS_CONFIG_DIR}/nightscout.env

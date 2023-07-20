@@ -31,7 +31,7 @@ services:
       - COMPRESSION_LEVEL=9
       - DB_TYPE=mongo
       - DB_HOST=mongodb
-      - DB_PORT=${INTERNAL_MONGO_PORT}
+      - DB_PORT=27017
       - DB_CLEANUP_TIME=10080
     networks:
       - ns-tier

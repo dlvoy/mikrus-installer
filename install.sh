@@ -14,17 +14,23 @@
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 
 
+# shellcheck disable=SC2148
+# shellcheck disable=SC2155
+
 #=======================================
 # CONFIG
 #=======================================
 
 REQUIRED_NODE_VERSION=18.0.0
-LOGTO=/dev/null
+LOGTO=./log.txt
 ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
 DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
+TOOL_FILE=/srv/nightscout/tools/nightscout-tool
+TOOL_LINK=/usr/bin/nightscout-tool
+UPDATES_DIR=/srv/nightscout/updates
 
 #=======================================
 # SETUP
@@ -101,7 +107,7 @@ else
     tty_escape() { :; }
 fi
 tty_mkbold() { tty_escape "1;$1"; }
-tty_underline="$(tty_escape "4;39")"
+# tty_underline="$(tty_escape "4;39")"
 tty_blue="$(tty_mkbold 34)"
 tty_red="$(tty_mkbold 31)"
 tty_bold="$(tty_mkbold 39)"
@@ -111,22 +117,21 @@ tty_reset="$(tty_escape 0)"
 # EMOJIS
 #=======================================
 
-emoji_unicorn="\U1F984"
 emoji_check="\U2705"
 emoji_ok="\U1F197"
 
-uni_bullet="  $(printf '\u2022') " 
+uni_bullet="  $(printf '\u2022') "
 uni_bullet_pad="    "
 
-uni_exit=" $(printf '\U274C') Wyjdź " 
-uni_start=" $(printf '\U1F984') Zaczynamy " 
-uni_menu=" $(printf '\U1F6E0')  Menu " 
-uni_finish=" $(printf '\U1F984') Zamknij " 
+uni_exit=" $(printf '\U274C') Wyjdź "
+uni_start=" $(printf '\U1F984') Zaczynamy "
+uni_menu=" $(printf '\U1F6E0')  Menu "
+uni_finish=" $(printf '\U1F984') Zamknij "
 uni_reenter=" $(printf '\U21AA') Tak "
-uni_noenter=" $(printf '\U2716') Nie " 
-uni_back=" $(printf '\U2B05') Wróć " 
+uni_noenter=" $(printf '\U2716') Nie "
+uni_back=" $(printf '\U2B05') Wróć "
 uni_select=" Wybierz "
-uni_excl="$(printf '\U203C')" 
+uni_excl="$(printf '\U203C')"
 uni_confirm_del=" $(printf '\U1F4A3') Tak "
 uni_resign=" $(printf '\U1F6AB') Rezygnuję "
 
@@ -153,10 +158,12 @@ ohai() {
 }
 
 msgok() {
+    # shellcheck disable=SC2059
     printf "$emoji_ok  $1\n"
 }
 
 msgcheck() {
+    # shellcheck disable=SC2059
     printf "$emoji_check  $1\n"
 }
 
@@ -187,7 +194,7 @@ version_lt() {
     [[ "${1%.*}" -lt "${2%.*}" ]] || [[ "${1%.*}" -eq "${2%.*}" && "${1#*.}" -lt "${2#*.}" ]]
 }
 
-if:IsSet() {
+ifIsSet() {
     [[ ${!1-x} == x ]] && return 1 || return 0
 }
 
@@ -209,42 +216,42 @@ echo_progress() {
     local firstPhaseSecs=$5 # how long first, ticked part, last
 
     if [ "$realProg" -eq "0" ]; then
-        local progrsec=$(( ($countr * $realStart) / (3 * $firstPhaseSecs)  ))
-        if [ $progrsec -lt $realStart ]; then
+        local progrsec=$(((countr * realStart) / (3 * firstPhaseSecs)))
+        if [ $progrsec -lt "$realStart" ]; then
             echo $progrsec
-        else 
-            echo $realStart
+        else
+            echo "$realStart"
         fi
     else
-        echo $(( ($realProg*(100-$realStart) / $realMax)+$realStart )) 
+        echo $(((realProg * (100 - realStart) / realMax) + realStart))
     fi
 }
 
-process_gauge(){                                       
+process_gauge() {
     local process_to_measure=$1
-    local message=$3
-    local lenmsg=$(echo "$4" | wc -l)
-    eval $process_to_measure &
+    local lenmsg
+    lenmsg=$(echo "$4" | wc -l)
+    eval "$process_to_measure" &
     local thepid=$!
     local num=1
     while true; do
         echo 0
         while kill -0 "$thepid" >/dev/null 2>&1; do
-            eval $2 $num
-            num=$((num+1))
+            eval "$2" $num
+            num=$((num + 1))
             sleep 0.3
         done
         echo 100
         break
-    done  | whiptail --title "$3" --gauge "\n  $4\n" $(( $lenmsg +6 )) 70 0
+    done | whiptail --title "$3" --gauge "\n  $4\n" $((lenmsg + 6)) 70 0
 }
 
 download_if_not_exists() {
     if [[ -f $2 ]]; then
         msgok "Found $1"
-    else 
+    else
         ohai "Downloading $1..."
-        curl -fsSL -o $2 $3
+        curl -fsSL -o "$2" "$3"
         msgcheck "Downloaded $1"
     fi
 }
@@ -255,8 +262,9 @@ download_if_not_exists() {
 
 packages=()
 aptGetWasUpdated=0
-serverName=$(hostname)
-apiKey=""
+
+MIKRUS_APIKEY=''
+MIKRUS_HOST=''
 
 #=======================================
 # ACTIONS AND STEPS
@@ -266,7 +274,7 @@ setup_update_repo() {
     if [ "$aptGetWasUpdated" -eq "0" ]; then
         aptGetWasUpdated=1
         ohai "Updating package repository"
-        apt-get -yq update >/dev/null 2>&1
+        apt-get -yq update >>$LOGTO 2>&1
     fi
 }
 
@@ -293,13 +301,8 @@ add_if_not_ok_cmd() {
         msgcheck "$1 installed"
     else
         ohai "Installing $1..."
-        eval $2 >/dev/null 2>&1 && msgcheck "Installing $1 successfull"
+        eval "$2" >>$LOGTO 2>&1 && msgcheck "Installing $1 successfull"
     fi
-}
-
-check_tig() {
-    tig -v >/dev/null 2>&1
-    add_if_not_ok "Tig" "tig"
 }
 
 check_git() {
@@ -328,7 +331,9 @@ check_dotenv() {
 }
 
 setup_packages() {
-    if:IsSet packages && setup_update_repo && ohai "Installing packages: ${packages[@]}" && apt-get -yq install ${packages[@]} >/dev/null 2>&1 && msgcheck "Install successfull" || msgok "All required packages already installed"
+    # shellcheck disable=SC2145
+    # shellcheck disable=SC2068
+    (ifIsSet packages && setup_update_repo && ohai "Installing packages: ${packages[@]}" && apt-get -yq install ${packages[@]} >>$LOGTO 2>&1 && msgcheck "Install successfull") || msgok "All required packages already installed"
 }
 
 setup_node() {
@@ -341,7 +346,7 @@ setup_node() {
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - >/dev/null 2>&1
 
         ohai "Installing Node.js"
-        apt-get install -y nodejs >/dev/null 2>&1
+        apt-get install -y nodejs >>$LOGTO 2>&1
     fi
 }
 
@@ -360,49 +365,49 @@ setup_dir_structure() {
     ohai "Configuring folder structure"
     mkdir -p $MONGO_DB_DIR
     mkdir -p /srv/nightscout/config
+    mkdir -p /srv/nightscout/tools
+    mkdir -p $UPDATES_DIR
     chown -R mongodb:root $MONGO_DB_DIR
 }
 
 get_docker_status() {
     local ID=$(docker ps -a --no-trunc --filter name="^$1" --format '{{ .ID }}')
     if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
-        echo $(docker inspect $ID | jq -r ".[0].State.Status")
-    else 
+        docker inspect "$ID" | jq -r ".[0].State.Status"
+    else
         echo 'missing'
     fi
 }
 
 install_containers() {
-    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >/dev/null 2>&1  
+    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >>$LOGTO 2>&1
 }
 
 install_containers_progress() {
     local created=$(docker container ls -f 'status=created' -f name=ns-server -f name=ns-database | wc -l)
     local current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
-    local progr=$(( ($current-1)*2 + ($created-1) ))
-    echo_progress $progr 6 50 $1 60
+    local progr=$(((current - 1) * 2 + (created - 1)))
+    echo_progress $progr 6 50 "$1" 60
 }
 
 uninstall_containers() {
-    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >/dev/null 2>&1
+    docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >>$LOGTO 2>&1
 }
 
 uninstall_containers_progress() {
     local running=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database -f name=ns-backup | wc -l)
     local current=$(docker container ls -f 'status=exited' -f name=ns-server -f name=ns-database -f name=ns-backup | wc -l)
-    local progr=$(( $current-1 ))
-    if [ "$(( ($running-1) + ($current-1) ))" -eq "0" ]; then
-        echo_progress 3 3 50 $1 15 
+    local progr=$((current - 1))
+    if [ "$(((running - 1) + (current - 1)))" -eq "0" ]; then
+        echo_progress 3 3 50 "$1" 15
     else
-        echo_progress $progr 3 50 $1 15 
+        echo_progress $progr 3 50 "$1" 15
     fi
 }
 
-MIKRUS_APIKEY=''
-MIKRUS_HOST=''
-
 source_admin() {
     if [[ -f $ENV_FILE_ADMIN ]]; then
+        # shellcheck disable=SC1090
         source $ENV_FILE_ADMIN
         msgok "Imported admin config"
     fi
@@ -414,26 +419,42 @@ download_conf() {
     download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml
 }
 
+download_tools() {
+    if ! [[ -f $TOOL_FILE ]]; then
+        download_if_not_exists "nightscout-tool file" $TOOL_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/install.sh
+        local timestamp=$(date +%s)
+        echo "$timestamp" >"$UPDATES_DIR/timestamp"
+    fi
+
+    if ! [[ -f $TOOL_LINK ]]; then
+        ohai "Linking nightscout-tool"
+        ln -s "$TOOL_FILE" "$TOOL_LINK"
+    fi
+
+    chmod +x $TOOL_FILE
+    chmod +x $TOOL_LINK
+}
+
 prompt_welcome() {
-    whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." --yes-button "$uni_start" --no-button "$uni_exit" 12 70 
+    whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." --yes-button "$uni_start" --no-button "$uni_exit" 12 70
     exit_on_no_cancel
 }
 
 prompt_mikrus_host() {
     if ! [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
-        MIKRUS_HOST=`hostname`
-        while : ; do
+        MIKRUS_HOST=$(hostname)
+        while :; do
             if [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
-                break;
+                break
             else
                 MIKRUS_NEW_HOST=$(whiptail --title "Podaj identyfikator serwera" --inputbox "\nNie udało się wykryć identyfikatora serwera,\npodaj go poniżej ręcznie.\n\nIdentyfikator składa się z jednej litery i trzech cyfr\n" --cancel-button "Anuluj" 13 65 3>&1 1>&2 2>&3)
                 exit_on_no_cancel
                 if [[ "$MIKRUS_NEW_HOST" =~ [a-z][0-9]{3} ]]; then
                     MIKRUS_HOST=$MIKRUS_NEW_HOST
-                    break;
+                    break
                 else
-                whiptail --title "$uni_excl Nieprawidłowy identyfikator serwera $uni_excl" --yesno "Podany identyfikator serwera ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70 
-                exit_on_no_cancel 
+                    whiptail --title "$uni_excl Nieprawidłowy identyfikator serwera $uni_excl" --yesno "Podany identyfikator serwera ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
+                    exit_on_no_cancel
                 fi
             fi
         done
@@ -445,10 +466,10 @@ prompt_mikrus_host() {
 
 prompt_mikrus_apikey() {
     if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
-        whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API"  16 70 
+        whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" 16 70
         exit_on_no_cancel
 
-        while : ; do
+        while :; do
             MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --inputbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
             exit_on_no_cancel
             if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
@@ -458,11 +479,11 @@ prompt_mikrus_apikey() {
                     msgcheck "Mikrus OK"
                     break
                 else
-                    whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key wydaje się mieć dobry format, ale NIE DZIAŁA!\nMoże to literówka lub podano API KEY z innego Mikr.us-a?.\n\nPotrzebujesz API KEY serwera [$MIKRUS_HOST]\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70 
-                    exit_on_no_cancel                
+                    whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key wydaje się mieć dobry format, ale NIE DZIAŁA!\nMoże to literówka lub podano API KEY z innego Mikr.us-a?.\n\nPotrzebujesz API KEY serwera [$MIKRUS_HOST]\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
+                    exit_on_no_cancel
                 fi
             else
-                whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70 
+                whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
                 exit_on_no_cancel
             fi
         done
@@ -476,63 +497,62 @@ prompt_api_secret() {
     API_SECRET=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
 
     if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
-    while : ; do 
-        CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
-        "1)" "Wygeneruj losowo."   \
-        "2)" "Podaj własny."  \
-        --ok-button="$uni_select" --cancel-button="$uni_exit" \
-        3>&2 2>&1 1>&3)
-        exit_on_no_cancel
+        while :; do
+            CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
+                "1)" "Wygeneruj losowo." \
+                "2)" "Podaj własny." \
+                --ok-button="$uni_select" --cancel-button="$uni_exit" \
+                3>&2 2>&1 1>&3)
+            exit_on_no_cancel
 
-        case $CHOICE in
-            "1)")   
+            case $CHOICE in
+            "1)")
                 API_SECRET=$(openssl rand -base64 100 | tr -dc '23456789@ABCDEFGHJKLMNPRSTUVWXYZabcdefghijkmnopqrstuvwxyz' | fold -w 16 | head -n 1)
-                whiptail --title "Zapisz API SECRET" --msgbox "Zapisz poniższy wygenerowany API SECRET w bezpiecznym miejscu, np.: managerze haseł:\n\n\n              $API_SECRET" 12 50 
-            ;;
+                whiptail --title "Zapisz API SECRET" --msgbox "Zapisz poniższy wygenerowany API SECRET w bezpiecznym miejscu, np.: managerze haseł:\n\n\n              $API_SECRET" 12 50
+                ;;
             "2)")
-                while : ; do   
+                while :; do
                     API_SECRET=$(whiptail --title "Podaj API SECRET" --inputbox "\nWpisz API SECRET do serwera Nightscout:\n${uni_bullet}Upewnij się że masz go zapisanego np.: w managerze haseł\n${uni_bullet}Użyj conajmniej 12 znaków: małych i dużych liter i cyfr\n\n" --cancel-button "Anuluj" 12 75 3>&1 1>&2 2>&3)
 
-    
                     if [ $? -eq 1 ]; then
-                        break;
-                    fi 
-                    
+                        break
+                    fi
+
                     if [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
-                        break;
+                        break
                     else
-                        whiptail --title "$uni_excl Nieprawidłowy API SECRET $uni_excl" --yesno "Podany API SECRET ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73 
+                        whiptail --title "$uni_excl Nieprawidłowy API SECRET $uni_excl" --yesno "Podany API SECRET ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73
                         if [ $? -eq 1 ]; then
                             API_SECRET=''
                             break
-                        fi 
+                        fi
                     fi
                 done
 
-            ;;
-        esac
+                ;;
+            esac
 
-        while [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; do
-            API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --inputbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
-            if [ $? -eq 1 ]; then
-                    API_SECRET=''
-                    break
-                fi   
-            if [[ "$API_SECRET" == "$API_SECRET_CHECK" ]]; then
-                ohai "Updating nightscout config (api secret)"
-                dotenv-tool -pmr -i $ENV_FILE_NS -- "API_SECRET=$API_SECRET"
-                break 2
-            else
-                whiptail --title "$uni_excl Nieprawidłowe API SECRET $uni_excl" --yesno "Podana wartości API SECRET różni się od poprzedniej!\nChcesz podać ponownie?\n" --yes-button "$uni_reenter" --no-button "$uni_noenter" 9 60 
+            while [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; do
+                API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --inputbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
                 if [ $? -eq 1 ]; then
                     API_SECRET=''
                     break
-                fi                
-            fi
+                fi
+                if [[ "$API_SECRET" == "$API_SECRET_CHECK" ]]; then
+                    ohai "Updating nightscout config (api secret)"
+                    dotenv-tool -pmr -i $ENV_FILE_NS -- "API_SECRET=$API_SECRET"
+                    break 2
+                else
+                    whiptail --title "$uni_excl Nieprawidłowe API SECRET $uni_excl" --yesno "Podana wartości API SECRET różni się od poprzedniej!\nChcesz podać ponownie?\n" --yes-button "$uni_reenter" --no-button "$uni_noenter" 9 60
+                    if [ $? -eq 1 ]; then
+                        API_SECRET=''
+                        break
+                    fi
+                fi
+
+            done
 
         done
-
-     done
     fi
 }
 
@@ -546,47 +566,47 @@ docker_compose_down() {
 
 domain_setup() {
     ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-    whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut"  22 75 
+    whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut" 22 75
 }
 
 admin_panel_promo() {
-    whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "Ta instalacja Nightscout dodaje dodatkowy panel administracyjny do zarządzania serwerem i konfiguracją - online.\n\nZnajdziesz go klikając na ikonkę serwera w menu strony Nightscout\nlub dodając /mikrus na końcu swojego adresu Nightscout"  12 75 
+    whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "Ta instalacja Nightscout dodaje dodatkowy panel administracyjny do zarządzania serwerem i konfiguracją - online.\n\nZnajdziesz go klikając na ikonkę serwera w menu strony Nightscout\nlub dodając /mikrus na końcu swojego adresu Nightscout" 12 75
 }
 
 get_container_status() {
     local ID=$(docker ps -a --no-trunc --filter name="^$1$" --format '{{ .ID }}')
     if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
-        local status=$(docker inspect $ID | jq -r ".[0].State.Status")
+        local status=$(docker inspect "$ID" | jq -r ".[0].State.Status")
         case "$status" in
-            "running")
-                printf "\U1F7E2 działa"
-                ;;
-            "restarting")
-                printf "\U1F7E3 restart"
-                ;;
-            "created")
-                printf "\U26AA utworzono"
-                ;;
-            "exited")
-                printf "\U1F534 wyłączono"
-                ;;
-            "paused")
-                printf "\U1F7E1 zapauzowano"
-                ;;
-            "dead")
-                printf "\U1F480 zablokowany"
-                ;;
-    
+        "running")
+            printf "\U1F7E2 działa"
+            ;;
+        "restarting")
+            printf "\U1F7E3 restart"
+            ;;
+        "created")
+            printf "\U26AA utworzono"
+            ;;
+        "exited")
+            printf "\U1F534 wyłączono"
+            ;;
+        "paused")
+            printf "\U1F7E1 zapauzowano"
+            ;;
+        "dead")
+            printf "\U1F480 zablokowany"
+            ;;
+
         esac
-        
-    else 
+
+    else
         printf '\U2753 nie odnaleziono'
     fi
 }
 
 show_logs() {
-    local col=$(( $COLUMNS - 10 ))
-    local rws=$(( $LINES - 3 ))
+    local col=$((COLUMNS - 10))
+    local rws=$((LINES - 3))
     if [ $col -gt 120 ]; then
         col=160
     fi
@@ -596,41 +616,41 @@ show_logs() {
     if [ $rws -lt 12 ]; then
         rws=12
     fi
-    
-    local ID=$(docker ps -a --no-trunc --filter name="^$1$" --format '{{ .ID }}' )
-    if ! [ -z $ID ]; then
-        local tmpfile=$(mktemp) 
-        local logs=$(docker logs $ID 2>&1 | tail $(( $rws * -6)) | sed 's/\x1B\[[0-9;]\{1,\}[A-Za-z]//g' > $tmpfile)
-        whiptail --title "Logi $2" --scrolltext --textbox $tmpfile $rws $col
-        rm $tmpfile
+
+    local ID=$(docker ps -a --no-trunc --filter name="^$1$" --format '{{ .ID }}')
+    if [ -n "$ID" ]; then
+        local tmpfile=$(mktemp)
+        docker logs "$ID" 2>&1 | tail $((rws * -6)) | sed 's/\x1B\[[0-9;]\{1,\}[A-Za-z]//g' >"$tmpfile"
+        whiptail --title "Logi $2" --scrolltext --textbox "$tmpfile" $rws $col
+        rm "$tmpfile"
     fi
 }
 
 status_menu() {
-    while : ; do 
+    while :; do
         local CHOICE=$(whiptail --title "Status kontenerów" --menu "\nWybierz pozycję aby zobaczyć logi:\n" 15 60 5 \
-        "1)" "   Nightscout:  $(get_container_status 'ns-server')"  \
-        "2)" "  Baza danych:  $(get_container_status 'ns-database')"  \
-        "3)" "       Backup:  $(get_container_status 'ns-backup')"  \
-        "M)" "Powrót do menu"  \
-        --ok-button="Zobacz logi" --cancel-button="$uni_back" \
-        3>&2 2>&1 1>&3)
+            "1)" "   Nightscout:  $(get_container_status 'ns-server')" \
+            "2)" "  Baza danych:  $(get_container_status 'ns-database')" \
+            "3)" "       Backup:  $(get_container_status 'ns-backup')" \
+            "M)" "Powrót do menu" \
+            --ok-button="Zobacz logi" --cancel-button="$uni_back" \
+            3>&2 2>&1 1>&3)
 
         case $CHOICE in
-            "1)")
-                show_logs 'ns-server' 'Nightscouta'
-                ;;
-            "2)")
-                show_logs 'ns-database' 'bazy danych'
-                ;;
-            "3)")
-                show_logs 'ns-backup' 'usługi kopii zapasowych'
-                ;;
-            "M)")
-                break
+        "1)")
+            show_logs 'ns-server' 'Nightscouta'
             ;;
-            "")
-                break
+        "2)")
+            show_logs 'ns-database' 'bazy danych'
+            ;;
+        "3)")
+            show_logs 'ns-backup' 'usługi kopii zapasowych'
+            ;;
+        "M)")
+            break
+            ;;
+        "")
+            break
             ;;
         esac
     done
@@ -638,94 +658,93 @@ status_menu() {
 
 uninstall_menu() {
     local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
-    while : ; do 
+    while :; do
         local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 15 70 6 \
-        "1)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)"  \
-        "2)" "Usuń kontenery"  \
-        "3)" "Wyczyść bazę danych"  \
-        "4)" "Usuń wszystko (kontenery, dane, konfigurację)"  \
-        "M)" "Powrót do menu"  \
-        --ok-button="$uni_select" --cancel-button="$uni_back" \
-        3>&2 2>&1 1>&3)
+            "1)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
+            "2)" "Usuń kontenery" \
+            "3)" "Wyczyść bazę danych" \
+            "4)" "Usuń wszystko (kontenery, dane, konfigurację)" \
+            "M)" "Powrót do menu" \
+            --ok-button="$uni_select" --cancel-button="$uni_back" \
+            3>&2 2>&1 1>&3)
 
         case $CHOICE in
-            "2)")
-                whiptail --title "Usunąć kontenery?" --yesno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
-                if ! [ $? -eq 1 ]; then
-                    docker_compose_down
-                fi
-                ;;
-            "3)")
-                whiptail --title "Usunąć dane z bazy danych?" --yesno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78 
-                if ! [ $? -eq 1 ]; then
-                    docker_compose_down
-                    dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32 
-                    rm -r $MONGO_DB_DIR/*
-                    docker_compose_up
-                fi
-                ;;
-            "M)")
-                break
+        "2)")
+            whiptail --title "Usunąć kontenery?" --yesno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
+            if ! [ $? -eq 1 ]; then
+                docker_compose_down
+            fi
             ;;
-            "")
-                break
+        "3)")
+            whiptail --title "Usunąć dane z bazy danych?" --yesno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
+            if ! [ $? -eq 1 ]; then
+                docker_compose_down
+                dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
+                rm -r "${MONGO_DB_DIR:?}/*"
+                docker_compose_up
+            fi
+            ;;
+        "M)")
+            break
+            ;;
+        "")
+            break
             ;;
         esac
     done
 }
 
 main_menu() {
-    while : ; do 
+    while :; do
         local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n\n" 17 60 7 \
-        "1)" "Status kontenerów i logi"  \
-        "2)" "Pokaż port i API SECRET"  \
-        "3)" "Aktualizuj system"  \
-        "4)" "Aktualizuj kontenery"  \
-        "5)" "Zmień lub odinstaluj"  \
-        "X)" "Wyjście"  \
-        --ok-button="$uni_select" --cancel-button="$uni_exit" \
-        3>&2 2>&1 1>&3)
+            "1)" "Status kontenerów i logi" \
+            "2)" "Pokaż port i API SECRET" \
+            "3)" "Aktualizuj system" \
+            "4)" "Aktualizuj kontenery" \
+            "5)" "Zmień lub odinstaluj" \
+            "X)" "Wyjście" \
+            --ok-button="$uni_select" --cancel-button="$uni_exit" \
+            3>&2 2>&1 1>&3)
 
         case $CHOICE in
-            "1)")   
-                status_menu
+        "1)")
+            status_menu
             ;;
-            "2)")
-                local ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-                local ns_api_secret=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
-                whiptail --title "Podgląd konfiguracji Nightscout" --msgbox "\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" 10 60 
+        "2)")
+            local ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+            local ns_api_secret=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+            whiptail --title "Podgląd konfiguracji Nightscout" --msgbox "\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" 10 60
             ;;
-            "3)")
-                ohai "Updating package list"
-                dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33 
-                apt-get -yq update >/dev/null 2>&1
-                ohai "Upgrading system"
-                dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33 
-                apt-get -yq upgrade >/dev/null 2>&1
+        "3)")
+            ohai "Updating package list"
+            dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33
+            apt-get -yq update >>$LOGTO 2>&1
+            ohai "Upgrading system"
+            dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33
+            apt-get -yq upgrade >>$LOGTO 2>&1
             ;;
-            "4)")
-                docker_compose_down
-                docker_compose_up
+        "4)")
+            docker_compose_down
+            docker_compose_up
             ;;
-            "5)")   
-                uninstall_menu
+        "5)")
+            uninstall_menu
             ;;
-            "X)")
-                exit 0
+        "X)")
+            exit 0
             ;;
-            "")
-                exit 0
+        "")
+            exit 0
             ;;
         esac
     done
 }
 
 setup_done() {
-    whiptail --title "Gotowe!" --yesno --defaultno "     Możesz teraz zamknąć to narzędzie lub wrócić do menu.\n       Narzędzie dostępne jest też jako komenda konsoli:\n\n                         nightscout-tool" --yes-button "$uni_menu" --no-button "$uni_finish" 12 70 
+    whiptail --title "Gotowe!" --yesno --defaultno "     Możesz teraz zamknąć to narzędzie lub wrócić do menu.\n       Narzędzie dostępne jest też jako komenda konsoli:\n\n                         nightscout-tool" --yes-button "$uni_menu" --no-button "$uni_finish" 12 70
     exit_on_no_cancel
     main_menu
 }
-
 
 
 #=======================================
@@ -742,6 +761,7 @@ check_dotenv
 setup_users
 setup_dir_structure
 download_conf
+download_tools
 
 source_admin
 
@@ -761,4 +781,3 @@ else
     msgok "Wykryto uruchomiony Nightscout"
     main_menu
 fi
-

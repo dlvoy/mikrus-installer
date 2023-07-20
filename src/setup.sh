@@ -16,6 +16,7 @@
 #dev-begin
 DIR="${BASH_SOURCE%/*}"
 if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+# shellcheck source=/dev/null
 . "$DIR/lib.sh"
 #dev-end
 
@@ -35,6 +36,7 @@ check_dotenv
 setup_users
 setup_dir_structure
 download_conf
+download_tools
 
 source_admin
 
@@ -54,4 +56,3 @@ else
     msgok "Wykryto uruchomiony Nightscout"
     main_menu
 fi
-

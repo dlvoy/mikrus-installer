@@ -17,3 +17,6 @@ try {
 } catch (err) {
     console.error(err);
 }
+
+const event = new Date();
+fs.writeFileSync(baseDir + path.sep + 'updated', event.toISOString());

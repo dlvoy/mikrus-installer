@@ -12,7 +12,6 @@ if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
 # MAIN SCRIPT
 #=======================================
 
-#setup_update_repo
 check_git
 check_docker
 check_docker_compose
@@ -32,13 +31,14 @@ prompt_mikrus_apikey
 prompt_api_secret
 
 STATUS_NS=$(get_docker_status "ns-server")
-
-whiptail --msgbox "Gotowe! \n $STATUS_NS\n" 8 20
 if [ "$STATUS_NS" = "missing" ]; then
     ohai "Instalowanie Nightscout..."
-    processgauge install_containers install_containers_progress "Instalowanie usług" "Proszę czekać, trwa instalowanie usług..."
+    docker_compose_up
+    domain_setup
+    admin_panel_promo
+    setup_done
 else
     msgok "Wykryto uruchomiony Nightscout"
-    processgauge uninstall_containers uninstall_containers_progress "Zatrzymywanie usług" "Proszę czekać, trwa zatrzymywanie usług..."
+    main_menu
 fi
 

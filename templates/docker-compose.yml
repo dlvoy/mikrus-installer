@@ -21,7 +21,7 @@ services:
       - ns-tier
 
   dbbackup:
-    container_name: ns-database-backup
+    container_name: ns-backup
     restart: always
     image: "tiredofit/db-backup:${NS_DBBACKUP_TAG}"
     volumes:

@@ -1,5 +1,0 @@
-Creating network "config_ns-tier" with driver "bridge"
-Creating ns-database ... 
-[1A[2KCreating ns-database ... [32mdone[0m[1BCreating ns-database-backup ... 
-Creating ns-server          ... 
-[2A[2KCreating ns-database-backup ... [32mdone[0m[2B[1A[2KCreating ns-server          ... [32mdone[0m[1B

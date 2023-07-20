@@ -8,6 +8,7 @@ ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
 DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
+MONGO_DB_DIR=/srv/nightscout/data/mongodb
 
 #=======================================
 # SETUP
@@ -103,10 +104,15 @@ uni_bullet_pad="    "
 
 uni_exit=" $(printf '\U274C') Wyjdź " 
 uni_start=" $(printf '\U1F984') Zaczynamy " 
+uni_menu=" $(printf '\U1F6E0')  Menu " 
+uni_finish=" $(printf '\U1F984') Zamknij " 
 uni_reenter=" $(printf '\U21AA') Tak "
 uni_noenter=" $(printf '\U2716') Nie " 
+uni_back=" $(printf '\U2B05') Wróć " 
 uni_select=" Wybierz "
 uni_excl="$(printf '\U203C')" 
+uni_confirm_del=" $(printf '\U1F4A3') Tak "
+uni_resign=" $(printf '\U1F6AB') Rezygnuję "
 
 #=======================================
 # UTILS
@@ -169,11 +175,70 @@ if:IsSet() {
     [[ ${!1-x} == x ]] && return 1 || return 0
 }
 
+exit_on_no_cancel() {
+    if [ $? -eq 1 ]; then
+        exit 0
+    fi
+}
+
+#=======================================
+# HELPERS
+#=======================================
+
+echo_progress() {
+    local realProg=$1       # numerical real progress
+    local realMax=$2        # max value of that progress
+    local realStart=$3      # where real progress starts, %
+    local countr=$4         # real ticker, 3 ticks/s
+    local firstPhaseSecs=$5 # how long first, ticked part, last
+
+    if [ "$realProg" -eq "0" ]; then
+        local progrsec=$(( ($countr * $realStart) / (3 * $firstPhaseSecs)  ))
+        if [ $progrsec -lt $realStart ]; then
+            echo $progrsec
+        else 
+            echo $realStart
+        fi
+    else
+        echo $(( ($realProg*(100-$realStart) / $realMax)+$realStart )) 
+    fi
+}
+
+process_gauge(){                                       
+    local process_to_measure=$1
+    local message=$3
+    local lenmsg=$(echo "$4" | wc -l)
+    eval $process_to_measure &
+    local thepid=$!
+    local num=1
+    while true; do
+        echo 0
+        while kill -0 "$thepid" >/dev/null 2>&1; do
+            eval $2 $num
+            num=$((num+1))
+            sleep 0.3
+        done
+        echo 100
+        break
+    done  | whiptail --title "$3" --gauge "\n  $4\n" $(( $lenmsg +6 )) 70 0
+}
+
+download_if_not_exists() {
+    if [[ -f $2 ]]; then
+        msgok "Found $1"
+    else 
+        ohai "Downloading $1..."
+        curl -fsSL -o $2 $3
+        msgcheck "Downloaded $1"
+    fi
+}
+
 #=======================================
 # VARIABLES
 #=======================================
 
 packages=()
+aptGetWasUpdated=0
 serverName=$(hostname)
 apiKey=""
 
@@ -182,8 +247,11 @@ apiKey=""
 #=======================================
 
 setup_update_repo() {
-    ohai "Updating package repository"
-    apt-get -yq update >/dev/null 2>&1
+    if [ "$aptGetWasUpdated" -eq "0" ]; then
+        aptGetWasUpdated=1
+        ohai "Updating package repository"
+        apt-get -yq update >/dev/null 2>&1
+    fi
 }
 
 test_node() {
@@ -195,7 +263,7 @@ test_node() {
 # $1 lib name
 # $2 package name
 add_if_not_ok() {
-    RESULT=$?
+    local RESULT=$?
     if [ $RESULT -eq 0 ]; then
         msgcheck "$1 installed"
     else
@@ -204,7 +272,7 @@ add_if_not_ok() {
 }
 
 add_if_not_ok_cmd() {
-    RESULT=$?
+    local RESULT=$?
     if [ $RESULT -eq 0 ]; then
         msgcheck "$1 installed"
     else
@@ -244,12 +312,12 @@ check_dotenv() {
 }
 
 setup_packages() {
-    if:IsSet packages && ohai "Installing packages: ${packages[@]}" && apt-get -yq install ${packages[@]} >/dev/null 2>&1 && msgcheck "Install successfull" || msgok "All required packages already installed"
+    if:IsSet packages && setup_update_repo && ohai "Installing packages: ${packages[@]}" && apt-get -yq install ${packages[@]} >/dev/null 2>&1 && msgcheck "Install successfull" || msgok "All required packages already installed"
 }
 
 setup_node() {
     test_node
-    RESULT=$?
+    local RESULT=$?
     if [ $RESULT -eq 0 ]; then
         msgcheck "Node installed in correct version"
     else
@@ -261,15 +329,9 @@ setup_node() {
     fi
 }
 
-exit_on_no_cancel() {
-    if [ $? -eq 1 ]; then
-        exit 0
-    fi
-}
-
 setup_users() {
     id -u mongodb &>/dev/null
-    RESULT=$?
+    local RESULT=$?
     if [ $RESULT -eq 0 ]; then
         msgcheck "Mongo DB user detected"
     else
@@ -280,13 +342,13 @@ setup_users() {
 
 setup_dir_structure() {
     ohai "Configuring folder structure"
-    mkdir -p /srv/nightscout/data/mongodb
+    mkdir -p $MONGO_DB_DIR
     mkdir -p /srv/nightscout/config
-    chown -R mongodb:root /srv/nightscout/data/mongodb
+    chown -R mongodb:root $MONGO_DB_DIR
 }
 
 get_docker_status() {
-    ID=$(docker ps -a --no-trunc --filter name="^$1" --format '{{ .ID }}')
+    local ID=$(docker ps -a --no-trunc --filter name="^$1" --format '{{ .ID }}')
     if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
         echo $(docker inspect $ID | jq -r ".[0].State.Status")
     else 
@@ -294,21 +356,15 @@ get_docker_status() {
     fi
 }
 
-# >/dev/null 2>&1
-
 install_containers() {
     docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >/dev/null 2>&1  
 }
 
 install_containers_progress() {
-    created=$(docker container ls -f 'status=created' -f name=ns-server -f name=ns-database | wc -l)
-    current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
-    progr=$(( ($current-1)*2 + ($created-1) ))
-    if [ "$progr" -eq "0" ]; then
-        echo $1
-    else
-        echo $(( ($progr*50 / 6)+50 )) 
-    fi
+    local created=$(docker container ls -f 'status=created' -f name=ns-server -f name=ns-database | wc -l)
+    local current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
+    local progr=$(( ($current-1)*2 + ($created-1) ))
+    echo_progress $progr 6 50 $1 60
 }
 
 uninstall_containers() {
@@ -316,8 +372,14 @@ uninstall_containers() {
 }
 
 uninstall_containers_progress() {
-    current=$(docker container ls -f 'status=exited' -f name=ns-server -f name=ns-database | wc -l)
-    echo $(( (($current-1)*100 / 3) ))
+    local running=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database -f name=ns-backup | wc -l)
+    local current=$(docker container ls -f 'status=exited' -f name=ns-server -f name=ns-database -f name=ns-backup | wc -l)
+    local progr=$(( $current-1 ))
+    if [ "$(( ($running-1) + ($current-1) ))" -eq "0" ]; then
+        echo_progress 3 3 50 $1 15 
+    else
+        echo_progress $progr 3 50 $1 15 
+    fi
 }
 
 MIKRUS_APIKEY=''
@@ -327,16 +389,6 @@ source_admin() {
     if [[ -f $ENV_FILE_ADMIN ]]; then
         source $ENV_FILE_ADMIN
         msgok "Imported admin config"
-    fi
-}
-
-download_if_not_exists() {
-    if [[ -f $2 ]]; then
-        msgok "Found $1"
-    else 
-        ohai "Downloading $1..."
-        curl -fsSL -o $2 $3
-        msgcheck "Downloaded $1"
     fi
 }
 
@@ -464,40 +516,197 @@ prompt_api_secret() {
 
         done
 
-
      done
     fi
-
-        
-   
 }
 
-showprogress(){                                     
-    start=$1; end=$2; shortest=$3; longest=$4
+docker_compose_up() {
+    process_gauge install_containers install_containers_progress "Instalowanie Nightscouta" "Proszę czekać, trwa instalowanie kontenerów..."
+}
 
-    for n in $(seq $start $end); do
-        echo $n
-        pause=$(shuf -i ${shortest:=1}-${longest:=3} -n 1)
-        sleep $pause
+docker_compose_down() {
+    process_gauge uninstall_containers uninstall_containers_progress "Zatrzymywanie Nightscouta" "Proszę czekać, trwa zatrzymywanie i usuwanie kontenerów..."
+}
+
+domain_setup() {
+    ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+    whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut"  22 75 
+}
+
+admin_panel_promo() {
+    whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "Ta instalacja Nightscout dodaje dodatkowy panel administracyjny do zarządzania serwerem i konfiguracją - online.\n\nZnajdziesz go klikając na ikonkę serwera w menu strony Nightscout\nlub dodając /mikrus na końcu swojego adresu Nightscout"  12 75 
+}
+
+get_container_status() {
+    local ID=$(docker ps -a --no-trunc --filter name="^$1$" --format '{{ .ID }}')
+    if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
+        local status=$(docker inspect $ID | jq -r ".[0].State.Status")
+        case "$status" in
+            "running")
+                printf "\U1F7E2 działa"
+                ;;
+            "restarting")
+                printf "\U1F7E3 restart"
+                ;;
+            "created")
+                printf "\U26AA utworzono"
+                ;;
+            "exited")
+                printf "\U1F534 wyłączono"
+                ;;
+            "paused")
+                printf "\U1F7E1 zapauzowano"
+                ;;
+            "dead")
+                printf "\U1F480 zablokowany"
+                ;;
+    
+        esac
+        
+    else 
+        printf '\U2753 nie odnaleziono'
+    fi
+}
+
+show_logs() {
+    local col=$(( $COLUMNS - 10 ))
+    local rws=$(( $LINES - 3 ))
+    if [ $col -gt 120 ]; then
+        col=160
+    fi
+    if [ $col -lt 60 ]; then
+        col=60
+    fi
+    if [ $rws -lt 12 ]; then
+        rws=12
+    fi
+    
+    local ID=$(docker ps -a --no-trunc --filter name="^$1$" --format '{{ .ID }}' )
+    if ! [ -z $ID ]; then
+        local tmpfile=$(mktemp) 
+        local logs=$(docker logs $ID 2>&1 | tail $(( $rws * -6)) | sed 's/\x1B\[[0-9;]\{1,\}[A-Za-z]//g' > $tmpfile)
+        whiptail --title "Logi $2" --scrolltext --textbox $tmpfile $rws $col
+        rm $tmpfile
+    fi
+}
+
+status_menu() {
+    while : ; do 
+        local CHOICE=$(whiptail --title "Status kontenerów" --menu "\nWybierz pozycję aby zobaczyć logi:\n" 15 60 5 \
+        "1)" "   Nightscout:  $(get_container_status 'ns-server')"  \
+        "2)" "  Baza danych:  $(get_container_status 'ns-database')"  \
+        "3)" "       Backup:  $(get_container_status 'ns-backup')"  \
+        "M)" "Powrót do menu"  \
+        --ok-button="Zobacz logi" --cancel-button="$uni_back" \
+        3>&2 2>&1 1>&3)
+
+        case $CHOICE in
+            "1)")
+                show_logs 'ns-server' 'Nightscouta'
+                ;;
+            "2)")
+                show_logs 'ns-database' 'bazy danych'
+                ;;
+            "3)")
+                show_logs 'ns-backup' 'usługi kopii zapasowych'
+                ;;
+            "M)")
+                break
+            ;;
+            "")
+                break
+            ;;
+        esac
     done
 }
 
-processgauge(){                                       
-    process_to_measure=$1
-    message=$3
-    lenmsg=$(echo "$4" | wc -l)
-    eval $process_to_measure &
-    thepid=$!
-    num=1
-    while true; do
-        echo 0
-        while kill -0 "$thepid" >/dev/null 2>&1; do
-            if [[ $num -gt 50 ]] ; then num=50; fi
-            eval $2 $num
-            num=$((num+1))
-            sleep 0.3
-        done
-        echo 100
-        break
-    done  | whiptail --title "$3" --gauge "\n  $4\n" $(( $lenmsg +6 )) 70 0
+uninstall_menu() {
+    local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+    while : ; do 
+        local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 15 70 6 \
+        "1)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)"  \
+        "2)" "Usuń kontenery"  \
+        "3)" "Wyczyść bazę danych"  \
+        "4)" "Usuń wszystko (kontenery, dane, konfigurację)"  \
+        "M)" "Powrót do menu"  \
+        --ok-button="$uni_select" --cancel-button="$uni_back" \
+        3>&2 2>&1 1>&3)
+
+        case $CHOICE in
+            "2)")
+                whiptail --title "Usunąć kontenery?" --yesno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
+                if ! [ $? -eq 1 ]; then
+                    docker_compose_down
+                fi
+                ;;
+            "3)")
+                whiptail --title "Usunąć dane z bazy danych?" --yesno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78 
+                if ! [ $? -eq 1 ]; then
+                    docker_compose_down
+                    dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32 
+                    rm -r $MONGO_DB_DIR/*
+                    docker_compose_up
+                fi
+                ;;
+            "M)")
+                break
+            ;;
+            "")
+                break
+            ;;
+        esac
+    done
 }
+
+main_menu() {
+    while : ; do 
+        local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n\n" 17 60 7 \
+        "1)" "Status kontenerów i logi"  \
+        "2)" "Pokaż port i API SECRET"  \
+        "3)" "Aktualizuj system"  \
+        "4)" "Aktualizuj kontenery"  \
+        "5)" "Zmień lub odinstaluj"  \
+        "X)" "Wyjście"  \
+        --ok-button="$uni_select" --cancel-button="$uni_exit" \
+        3>&2 2>&1 1>&3)
+
+        case $CHOICE in
+            "1)")   
+                status_menu
+            ;;
+            "2)")
+                local ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+                local ns_api_secret=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+                whiptail --title "Podgląd konfiguracji Nightscout" --msgbox "\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" 10 60 
+            ;;
+            "3)")
+                ohai "Updating package list"
+                dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33 
+                apt-get -yq update >/dev/null 2>&1
+                ohai "Upgrading system"
+                dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33 
+                apt-get -yq upgrade >/dev/null 2>&1
+            ;;
+            "4)")
+                docker_compose_down
+                docker_compose_up
+            ;;
+            "5)")   
+                uninstall_menu
+            ;;
+            "X)")
+                exit 0
+            ;;
+            "")
+                exit 0
+            ;;
+        esac
+    done
+}
+
+setup_done() {
+    whiptail --title "Gotowe!" --yesno --defaultno "     Możesz teraz zamknąć to narzędzie lub wrócić do menu.\n       Narzędzie dostępne jest też jako komenda konsoli:\n\n                         nightscout-tool" --yes-button "$uni_menu" --no-button "$uni_finish" 12 70 
+    exit_on_no_cancel
+    main_menu
+}
+

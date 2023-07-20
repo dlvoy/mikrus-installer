@@ -1,5 +1,18 @@
 #!/bin/bash
 
+### version: 1.0.0
+
+# ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
+#    Nightscout Mikr.us setup script    #
+# ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
+#      (c)2023 by Dominik Dzienia       #
+#      <dominik.dzienia@gmail.com>      #
+#      Licensed under MIT license       #
+# ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
+# Some functions / concepts taken from: #
+#   https://github.com/Homebrew/brew    #
+# ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
+
 
 #=======================================
 # CONFIG

@@ -452,7 +452,7 @@ update_if_needed() {
         echo "$timestamp" >"$UPDATES_DIR/timestamp"
         local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated")"
         local lastUpdate=$(cat "$UPDATES_DIR/updated")
-        if [ "$onlineUpdated" == "$lastUpdate" ]; then
+        if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ] ; then
             msgok "Scripts and config files are up to date"
             if [ $# -eq 1 ]; then
                 whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
@@ -524,7 +524,7 @@ update_if_needed() {
 
                     if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
                         ohai "Updating $DOCKER_COMPOSE_FILE"
-                        cp -fr "$UPDATES_DIR/docker-compose.yml" $DOCKER_COMPOSE_FILE
+                        cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
                     fi
 
                     if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
@@ -541,7 +541,7 @@ update_if_needed() {
 
                     if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
                         ohai "Updating $TOOL_FILE"
-                        cp -fr "$UPDATES_DIR/install.sh" $TOOL_FILE
+                        cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
                         whiptail --title "Aktualizacja zakończona" --msgbox "Narzędzie zostanie uruchomione ponownie" 7 50
                         ohai "Restarting tool"
                         exec "$TOOL_FILE"

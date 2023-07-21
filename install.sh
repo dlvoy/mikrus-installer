@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.1.0
+### version: 1.1.1
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -31,7 +31,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.1.0" #auto-update
+SCRIPT_VERSION="1.1.1" #auto-update
 SCRIPT_BUILD_TIME="2023.07.21" #auto-update
 
 #=======================================
@@ -468,7 +468,7 @@ update_if_needed() {
         echo "$timestamp" >"$UPDATES_DIR/timestamp"
         local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated")"
         local lastUpdate=$(cat "$UPDATES_DIR/updated")
-        if [ "$onlineUpdated" == "$lastUpdate" ]; then
+        if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ] ; then
             msgok "Scripts and config files are up to date"
             if [ $# -eq 1 ]; then
                 whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
@@ -540,7 +540,7 @@ update_if_needed() {
 
                     if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
                         ohai "Updating $DOCKER_COMPOSE_FILE"
-                        cp -fr "$UPDATES_DIR/docker-compose.yml" $DOCKER_COMPOSE_FILE
+                        cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
                     fi
 
                     if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
@@ -557,7 +557,7 @@ update_if_needed() {
 
                     if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
                         ohai "Updating $TOOL_FILE"
-                        cp -fr "$UPDATES_DIR/install.sh" $TOOL_FILE
+                        cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
                         whiptail --title "Aktualizacja zakończona" --msgbox "Narzędzie zostanie uruchomione ponownie" 7 50
                         ohai "Restarting tool"
                         exec "$TOOL_FILE"

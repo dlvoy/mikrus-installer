@@ -1,4 +1,4 @@
-### version: 1.0.0
+### version: 1.0.1
 
 version: "2"
 
@@ -33,6 +33,7 @@ services:
       - DB_HOST=mongodb
       - DB_PORT=27017
       - DB_CLEANUP_TIME=10080
+      - CONTAINER_ENABLE_MONITORING=FALSE
     networks:
       - ns-tier
     depends_on:

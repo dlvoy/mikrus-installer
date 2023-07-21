@@ -15,6 +15,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
+SCRIPT_VERSION="1.0.0" #auto-update
+SCRIPT_BUILD_TIME="2023.07.01" #auto-update
 
 #=======================================
 # SETUP
@@ -117,6 +119,8 @@ uni_back=" $(printf '\U2B05') Wróć "
 uni_select=" Wybierz "
 uni_excl="$(printf '\U203C')"
 uni_confirm_del=" $(printf '\U1F4A3') Tak "
+uni_confirm_upd=" $(printf '\U1F199') Aktualizuj "
+uni_install=" $(printf '\U1F680') Instaluj "
 uni_resign=" $(printf '\U1F6AB') Rezygnuję "
 
 #=======================================
@@ -240,12 +244,20 @@ download_if_not_exists() {
     fi
 }
 
+center_text() {
+    local inText="$1"
+    local len=${#inText}
+    local spaces="                                                                      "
+    echo "${spaces:0:$(( ($2-len)/2 ))}$1"
+}
+
 #=======================================
 # VARIABLES
 #=======================================
 
 packages=()
 aptGetWasUpdated=0
+freshInstall=0
 
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
@@ -404,10 +416,14 @@ download_conf() {
 }
 
 download_tools() {
+    download_if_not_exists "update stamp" "$UPDATES_DIR/updated" https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated
+
     if ! [[ -f $TOOL_FILE ]]; then
         download_if_not_exists "nightscout-tool file" $TOOL_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/install.sh
         local timestamp=$(date +%s)
         echo "$timestamp" >"$UPDATES_DIR/timestamp"
+    else
+        msgok "Found nightscout-tool"
     fi
 
     if ! [[ -f $TOOL_LINK ]]; then
@@ -419,9 +435,142 @@ download_tools() {
     chmod +x $TOOL_LINK
 }
 
+extract_version() {
+    regex='version:\s+([0-9]+\.[0-9]+\.[0-9]+)'
+    if [[ "$1" =~ $regex ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "0.0.0"
+    fi
+}
+
+update_if_needed() {
+    local lastUpdate=$(cat "$UPDATES_DIR/timestamp")
+    local timestamp=$(date +%s)
+
+    if [ $((timestamp - lastUpdate)) -gt $(( 60*60*24 ))  ] || [ $# -eq 1  ]; then
+        echo "$timestamp" >"$UPDATES_DIR/timestamp"
+        local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated")"
+        local lastUpdate=$(cat "$UPDATES_DIR/updated")
+        if [ "$onlineUpdated" == "$lastUpdate" ]; then
+            msgok "Scripts and config files are up to date"
+            if [ $# -eq 1 ]; then
+                whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
+            fi
+        else
+            ohai "Updating scripts and config files"
+            curl -fsSL -o "$UPDATES_DIR/install.sh" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/install.sh"
+            curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/deployment.env"
+            curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env"
+            curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml"
+
+            local changed=0
+            local redeploy=0
+
+            local instOnlineVer=$(extract_version "$(<"$UPDATES_DIR/install.sh")")
+            local depEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/deployment.env")")
+            local nsEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/nightscout.env")")
+            local compOnlineVer=$(extract_version "$(<"$UPDATES_DIR/docker-compose.yml")")
+
+            local instLocalVer=$(extract_version "$(<"$TOOL_FILE")")
+            local depEnvLocalVer=$(extract_version "$(<"$ENV_FILE_DEP")")
+            local nsEnvLocalVer=$(extract_version "$(<"$ENV_FILE_NS")")
+            local compLocalVer=$(extract_version "$(<"$DOCKER_COMPOSE_FILE")")
+
+            local msgInst="$(printf "\U1F7E2") $instLocalVer"
+            local msgDep="$(printf "\U1F7E2") $depEnvLocalVer"
+            local msgNs="$(printf "\U1F7E2") $nsEnvLocalVer"
+            local msgComp="$(printf "\U1F7E2") $compLocalVer"
+
+            if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
+                changed=$((changed+1))
+                msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
+            fi
+
+            if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+                changed=$((changed+1))
+                redeploy=$((redeploy+1))
+                msgDep="$(printf "\U1F534") $depEnvLocalVer $(printf "\U27A1") $depEnvOnlineVer"
+            fi
+
+            if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+                changed=$((changed+1))
+                redeploy=$((redeploy+1))
+                msgNs="$(printf "\U1F534") $nsEnvLocalVer $(printf "\U27A1") $nsEnvOnlineVer"
+            fi
+
+            if ! [ "$compLocalVer" == "$compOnlineVer" ]; then
+                changed=$((changed+1))
+                redeploy=$((redeploy+1))
+                msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
+            fi
+
+            if [ $changed -eq 0 ]; then
+                if [ $# -eq 1 ]; then
+                    whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
+                fi
+            else
+                local okTxt=""
+                if [ $redeploy -gt 0 ]; then
+                    okTxt="\n\n $(printf "\U26A0") Aktualizacja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")"
+                fi
+
+                whiptail --title "Aktualizacja skryptów" --yesno "Zalecana jest aktualizacja plików:\n\n${uni_bullet}Skrypt instalacyjny:      $msgInst \n${uni_bullet}Konfiguracja deploymentu: $msgDep\n${uni_bullet}Konfiguracja Nightscout:  $msgNs \n${uni_bullet}Kompozycja usług:         $msgComp $okTxt" \
+                --yes-button "$uni_confirm_upd" --no-button "$uni_resign" 15 70
+                if ! [ $? -eq 1 ]; then
+                    if [ $redeploy -gt 0 ]; then
+                        docker_compose_down
+                    fi
+
+                    if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
+                        ohai "Updating $DOCKER_COMPOSE_FILE"
+                        cp -fr "$UPDATES_DIR/docker-compose.yml" $DOCKER_COMPOSE_FILE
+                    fi
+
+                    if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+                        ohai "Updating $ENV_FILE_DEP"
+                        dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
+                    fi
+
+                    if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+                        ohai "Updating $ENV_FILE_NS"
+                        dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
+                    fi
+
+                    echo "$onlineUpdated" >"$UPDATES_DIR/updated"
+
+                    if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
+                        ohai "Updating $TOOL_FILE"
+                        cp -fr "$UPDATES_DIR/install.sh" $TOOL_FILE
+                        whiptail --title "Aktualizacja zakończona" --msgbox "Narzędzie zostanie uruchomione ponownie" 7 50
+                        ohai "Restarting tool"
+                        exec "$TOOL_FILE"
+                    fi
+
+
+                fi
+            fi
+
+        fi
+
+    else
+        msgok "Too soon to check for update, skipping..."
+    fi
+}
+
+about_dialog() {
+    local width=60
+    local cw=$((width - 5))
+    whiptail --title "O tym narzędziu..." --msgbox "$(center_text "$(printf '\U1F9D1') (c) 2023 Dominik Dzienia" $cw)\n$(center_text "$(printf '\U1F4E7') dominik.dzienia@gmail.com" $cw)\n\n$(center_text "$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji MIT" $cw)\n\n$(center_text "wersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)" $cw)" 12 $width
+}
+
 prompt_welcome() {
     whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." --yes-button "$uni_start" --no-button "$uni_exit" 12 70
     exit_on_no_cancel
+}
+
+instal_now_prompt() {
+    whiptail --title "Instalować Nightscout?" --yesno "Wykryto konfigurację ale brak uruchomionych usług\nCzy chcesz zainstalować teraz kontenery Nightscout?" --yes-button "$uni_install" --no-button "$uni_noenter" 9 70
 }
 
 prompt_mikrus_host() {
@@ -450,6 +599,7 @@ prompt_mikrus_host() {
 
 prompt_mikrus_apikey() {
     if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
+        freshInstall=$((freshInstall+1))
         whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" 16 70
         exit_on_no_cancel
 
@@ -481,6 +631,7 @@ prompt_api_secret() {
     API_SECRET=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
 
     if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
+        freshInstall=$((freshInstall+1))
         while :; do
             CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
                 "1)" "Wygeneruj losowo." \
@@ -654,13 +805,13 @@ uninstall_menu() {
 
         case $CHOICE in
         "2)")
-            whiptail --title "Usunąć kontenery?" --yesno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
+            whiptail --title "Usunąć kontenery?" --yesno --defaultno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
             fi
             ;;
         "3)")
-            whiptail --title "Usunąć dane z bazy danych?" --yesno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
+            whiptail --title "Usunąć dane z bazy danych?" --yesno --defaultno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
                 dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
@@ -680,12 +831,15 @@ uninstall_menu() {
 
 main_menu() {
     while :; do
-        local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n\n" 17 60 7 \
+        local quickStatus=$(center_text "Nightscout: $(get_container_status 'ns-server')" 55)
+        local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n$quickStatus\n" 19 60 8 \
             "1)" "Status kontenerów i logi" \
             "2)" "Pokaż port i API SECRET" \
             "3)" "Aktualizuj system" \
-            "4)" "Aktualizuj kontenery" \
-            "5)" "Zmień lub odinstaluj" \
+            "4)" "Aktualizuj to narzędzie" \
+            "5)" "Aktualizuj kontenery" \
+            "6)" "Zmień lub odinstaluj" \
+            "I)" "O tym narzędziu..." \
             "X)" "Wyjście" \
             --ok-button="$uni_select" --cancel-button="$uni_exit" \
             3>&2 2>&1 1>&3)
@@ -708,11 +862,17 @@ main_menu() {
             apt-get -yq upgrade >>$LOGTO 2>&1
             ;;
         "4)")
+            update_if_needed "Wszystkie pliki narzędzia są aktualne"
+            ;;
+        "5)")
             docker_compose_down
             docker_compose_up
             ;;
-        "5)")
+        "6)")
             uninstall_menu
+            ;;
+        "I)")
+            about_dialog
             ;;
         "X)")
             exit 0

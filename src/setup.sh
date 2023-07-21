@@ -37,6 +37,7 @@ setup_users
 setup_dir_structure
 download_conf
 download_tools
+update_if_needed
 
 source_admin
 
@@ -47,11 +48,23 @@ prompt_api_secret
 
 STATUS_NS=$(get_docker_status "ns-server")
 if [ "$STATUS_NS" = "missing" ]; then
-    ohai "Instalowanie Nightscout..."
-    docker_compose_up
-    domain_setup
-    admin_panel_promo
-    setup_done
+
+    if [ "$freshInstall" -eq 0 ]; then
+        instal_now_prompt
+        if ! [ $? -eq 1 ]; then
+            freshInstall=1
+        fi
+    fi
+
+    if [ "$freshInstall" -gt 0 ]; then
+        ohai "Instalowanie Nightscout..."
+        docker_compose_up
+        domain_setup
+        admin_panel_promo
+        setup_done
+    else
+        main_menu
+    fi
 else
     msgok "Wykryto uruchomiony Nightscout"
     main_menu

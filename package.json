@@ -1,11 +1,11 @@
 {
   "name": "@dlvoy/ns-installer-mikrus",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Nightscout installer for mikr.us VPS",
   "main": "index.js",
   "scripts": {
     "build": "node ./tools/build.js"
   },
   "author": "Dominik Dzienia <dominik.dzienia@gmail.com>",
-  "license": "MIT"
+  "license": "CC-BY-NC-ND-4.0"
 }

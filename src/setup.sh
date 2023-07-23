@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.0.0
+### version: 1.2.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -46,26 +46,4 @@ prompt_mikrus_host
 prompt_mikrus_apikey
 prompt_api_secret
 
-STATUS_NS=$(get_docker_status "ns-server")
-if [ "$STATUS_NS" = "missing" ]; then
-
-    if [ "$freshInstall" -eq 0 ]; then
-        instal_now_prompt
-        if ! [ $? -eq 1 ]; then
-            freshInstall=1
-        fi
-    fi
-
-    if [ "$freshInstall" -gt 0 ]; then
-        ohai "Instalowanie Nightscout..."
-        docker_compose_up
-        domain_setup
-        admin_panel_promo
-        setup_done
-    else
-        main_menu
-    fi
-else
-    msgok "Wykryto uruchomiony Nightscout"
-    main_menu
-fi
+install_or_menu

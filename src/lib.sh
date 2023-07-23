@@ -6,7 +6,9 @@
 #=======================================
 
 REQUIRED_NODE_VERSION=18.0.0
-LOGTO=./log.txt
+LOGTO=/dev/null
+NIGHTSCOUT_ROOT_DIR=/srv/nightscout
+CONFIG_ROOT_DIR=/srv/nightscout/config
 ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
@@ -15,8 +17,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.0.0" #auto-update
-SCRIPT_BUILD_TIME="2023.07.01" #auto-update
+SCRIPT_VERSION="1.2.0"         #auto-update
+SCRIPT_BUILD_TIME="2023.07.23" #auto-update
 
 #=======================================
 # SETUP
@@ -248,7 +250,44 @@ center_text() {
     local inText="$1"
     local len=${#inText}
     local spaces="                                                                      "
-    echo "${spaces:0:$(( ($2-len)/2 ))}$1"
+    echo "${spaces:0:$((($2 - len) / 2))}$1"
+}
+
+multiline_length() {
+    local string=$1
+    local maxLen=0
+    # shellcheck disable=SC2059
+    readarray -t array <<< "$(printf "$string")"
+    for i in "${!array[@]}"
+    do
+        local line=${array[i]}
+        lineLen=${#line}
+        if [ "$lineLen" -gt "$maxLen" ]; then
+            maxLen="$lineLen"
+        fi
+    done
+
+    echo "$maxLen"
+}
+
+center_multiline() {
+    local maxLen=70
+    if [ $# -gt 1 ]; then
+        maxLen=$2
+    else
+        maxLen=$(multiline_length "$1")
+    fi
+
+    local string=$1
+    # shellcheck disable=SC2059
+    readarray -t array <<< "$(printf "$string")"
+    for i in "${!array[@]}"
+    do
+        local line=${array[i]}
+        # shellcheck disable=SC2005
+        echo "$(center_text "$line" "$maxLen")"
+    done
+
 }
 
 #=======================================
@@ -448,11 +487,11 @@ update_if_needed() {
     local lastUpdate=$(cat "$UPDATES_DIR/timestamp")
     local timestamp=$(date +%s)
 
-    if [ $((timestamp - lastUpdate)) -gt $(( 60*60*24 ))  ] || [ $# -eq 1  ]; then
+    if [ $((timestamp - lastUpdate)) -gt $((60 * 60 * 24)) ] || [ $# -eq 1 ]; then
         echo "$timestamp" >"$UPDATES_DIR/timestamp"
         local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated")"
         local lastUpdate=$(cat "$UPDATES_DIR/updated")
-        if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ] ; then
+        if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ]; then
             msgok "Scripts and config files are up to date"
             if [ $# -eq 1 ]; then
                 whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
@@ -483,25 +522,25 @@ update_if_needed() {
             local msgComp="$(printf "\U1F7E2") $compLocalVer"
 
             if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
-                changed=$((changed+1))
+                changed=$((changed + 1))
                 msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
             fi
 
             if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
-                changed=$((changed+1))
-                redeploy=$((redeploy+1))
+                changed=$((changed + 1))
+                redeploy=$((redeploy + 1))
                 msgDep="$(printf "\U1F534") $depEnvLocalVer $(printf "\U27A1") $depEnvOnlineVer"
             fi
 
             if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
-                changed=$((changed+1))
-                redeploy=$((redeploy+1))
+                changed=$((changed + 1))
+                redeploy=$((redeploy + 1))
                 msgNs="$(printf "\U1F534") $nsEnvLocalVer $(printf "\U27A1") $nsEnvOnlineVer"
             fi
 
             if ! [ "$compLocalVer" == "$compOnlineVer" ]; then
-                changed=$((changed+1))
-                redeploy=$((redeploy+1))
+                changed=$((changed + 1))
+                redeploy=$((redeploy + 1))
                 msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
             fi
 
@@ -516,7 +555,7 @@ update_if_needed() {
                 fi
 
                 whiptail --title "Aktualizacja skryptów" --yesno "Zalecana jest aktualizacja plików:\n\n${uni_bullet}Skrypt instalacyjny:      $msgInst \n${uni_bullet}Konfiguracja deploymentu: $msgDep\n${uni_bullet}Konfiguracja Nightscout:  $msgNs \n${uni_bullet}Kompozycja usług:         $msgComp $okTxt" \
-                --yes-button "$uni_confirm_upd" --no-button "$uni_resign" 15 70
+                    --yes-button "$uni_confirm_upd" --no-button "$uni_resign" 15 70
                 if ! [ $? -eq 1 ]; then
                     if [ $redeploy -gt 0 ]; then
                         docker_compose_down
@@ -547,7 +586,6 @@ update_if_needed() {
                         exec "$TOOL_FILE"
                     fi
 
-
                 fi
             fi
 
@@ -559,18 +597,18 @@ update_if_needed() {
 }
 
 about_dialog() {
-    local width=60
-    local cw=$((width - 5))
-    whiptail --title "O tym narzędziu..." --msgbox "$(center_text "$(printf '\U1F9D1') (c) 2023 Dominik Dzienia" $cw)\n$(center_text "$(printf '\U1F4E7') dominik.dzienia@gmail.com" $cw)\n\n$(center_text "$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji MIT" $cw)\n\n$(center_text "wersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)" $cw)" 12 $width
+    local msg="$(printf '\U1F9D1') (c) 2023 Dominik Dzienia\n$(printf '\U1F4E7') dominik.dzienia@gmail.com\n\n$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji CC BY-NC-ND 4.0\nhttps://creativecommons.org/licenses/by-nc-nd/4.0/deed.pl\n\nwersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)"
+    local width=$(multiline_length "$msg")
+    whiptail --title "O tym narzędziu..." --msgbox "$(center_multiline "$msg" $((width+4)))" 13 $((width + 9))
 }
 
 prompt_welcome() {
-    whiptail --title "Witamy" --yesno "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." --yes-button "$uni_start" --no-button "$uni_exit" 12 70
+    whiptail --title "Witamy" --yesno "$(center_multiline "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." 65)" --yes-button "$uni_start" --no-button "$uni_exit" 12 70
     exit_on_no_cancel
 }
 
 instal_now_prompt() {
-    whiptail --title "Instalować Nightscout?" --yesno "Wykryto konfigurację ale brak uruchomionych usług\nCzy chcesz zainstalować teraz kontenery Nightscout?" --yes-button "$uni_install" --no-button "$uni_noenter" 9 70
+    whiptail --title "Instalować Nightscout?" --yesno "$(center_multiline "Wykryto konfigurację ale brak uruchomionych usług\nCzy chcesz zainstalować teraz kontenery Nightscout?" 65)" --yes-button "$uni_install" --no-button "$uni_noenter" 9 70
 }
 
 prompt_mikrus_host() {
@@ -599,12 +637,12 @@ prompt_mikrus_host() {
 
 prompt_mikrus_apikey() {
     if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
-        freshInstall=$((freshInstall+1))
+        freshInstall=$((freshInstall + 1))
         whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" 16 70
         exit_on_no_cancel
 
         while :; do
-            MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --inputbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
+            MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --passwordbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
             exit_on_no_cancel
             if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
                 MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
@@ -631,7 +669,7 @@ prompt_api_secret() {
     API_SECRET=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
 
     if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
-        freshInstall=$((freshInstall+1))
+        freshInstall=$((freshInstall + 1))
         while :; do
             CHOICE=$(whiptail --title "Ustal API SECRET" --menu "\nUstal bezpieczny API_SECRET, tajne główne hasło zabezpieczające dostęp do Twojego Nightscouta\n" 13 70 2 \
                 "1)" "Wygeneruj losowo." \
@@ -647,7 +685,7 @@ prompt_api_secret() {
                 ;;
             "2)")
                 while :; do
-                    API_SECRET=$(whiptail --title "Podaj API SECRET" --inputbox "\nWpisz API SECRET do serwera Nightscout:\n${uni_bullet}Upewnij się że masz go zapisanego np.: w managerze haseł\n${uni_bullet}Użyj conajmniej 12 znaków: małych i dużych liter i cyfr\n\n" --cancel-button "Anuluj" 12 75 3>&1 1>&2 2>&3)
+                    API_SECRET=$(whiptail --title "Podaj API SECRET" --passwordbox "\nWpisz API SECRET do serwera Nightscout:\n${uni_bullet}Upewnij się że masz go zapisanego np.: w managerze haseł\n${uni_bullet}Użyj conajmniej 12 znaków: małych i dużych liter i cyfr\n\n" --cancel-button "Anuluj" 12 75 3>&1 1>&2 2>&3)
 
                     if [ $? -eq 1 ]; then
                         break
@@ -668,7 +706,7 @@ prompt_api_secret() {
             esac
 
             while [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; do
-                API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --inputbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
+                API_SECRET_CHECK=$(whiptail --title "Podaj ponownie API SECRET" --passwordbox "\nDla sprawdzenia, wpisz ustalony przed chwilą API SECRET\n\n" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
                 if [ $? -eq 1 ]; then
                     API_SECRET=''
                     break
@@ -705,7 +743,7 @@ domain_setup() {
 }
 
 admin_panel_promo() {
-    whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "Ta instalacja Nightscout dodaje dodatkowy panel administracyjny do zarządzania serwerem i konfiguracją - online.\n\nZnajdziesz go klikając na ikonkę serwera w menu strony Nightscout\nlub dodając /mikrus na końcu swojego adresu Nightscout" 12 75
+    whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "$(center_multiline "Ta instalacja Nightscout dodaje dodatkowy panel administracyjny\ndo zarządzania serwerem i konfiguracją - online.\n\nZnajdziesz go klikając na ikonkę serwera w menu strony Nightscout\nlub dodając /mikrus na końcu swojego adresu Nightscout" 70)" 12 75
 }
 
 get_container_status() {
@@ -731,7 +769,6 @@ get_container_status() {
         "dead")
             printf "\U1F480 zablokowany"
             ;;
-
         esac
 
     else
@@ -798,7 +835,8 @@ uninstall_menu() {
             "1)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
             "2)" "Usuń kontenery" \
             "3)" "Wyczyść bazę danych" \
-            "4)" "Usuń wszystko (kontenery, dane, konfigurację)" \
+            "4)" "Usuń kontenery, dane i konfigurację" \
+            "5)" "Usuń wszystko - odinstaluj" \
             "M)" "Powrót do menu" \
             --ok-button="$uni_select" --cancel-button="$uni_back" \
             3>&2 2>&1 1>&3)
@@ -815,8 +853,34 @@ uninstall_menu() {
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
                 dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
-                rm -r "${MONGO_DB_DIR:?}/*"
+                rm -r "${MONGO_DB_DIR:?}/data"
                 docker_compose_up
+            fi
+            ;;
+        "4)")
+            whiptail --title "Usunąć wszystkie dane?" --yesno --defaultno "Czy na pewno chcesz usunąć wszystkie dane i konfigurację?\n\n${uni_bullet}konfigurację panelu, ustawienia Nightscout\n${uni_bullet}wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
+            if ! [ $? -eq 1 ]; then
+                docker_compose_down
+                dialog --title " Czyszczenie bazy danych" --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
+                rm -r "${MONGO_DB_DIR:?}/data"
+                dialog --title " Czyszczenie konfiguracji" --infobox "\n    Usuwanie konfiguracji\n   ... Proszę czekać ..." 6 32
+                rm -r "${CONFIG_ROOT_DIR:?}"
+                whiptail --title "Usunięto dane użytkownika" --msgbox "$(center_multiline "Usunęto dane użytkwnika i konfigurację.\n\nAby zainstalować Nightscout od zera:\nuruchom ponownie skrypt i podaj konfigurację" 65)" 11 70
+                exit 0
+            fi
+            ;;
+        "5)")
+            whiptail --title "Odinstalować?" --yesno --defaultno "Czy na pewno chcesz usunąć wszystko?\n${uni_bullet}konfigurację panelu, ustawienia Nightscout\n${uni_bullet}wszystkie dane użytkownika (glikemia, status, profile)\n${uni_bullet}kontenery, skrypt nightscout-tool\n\nNIE ZOSTANĄ USUNIĘTE/ODINSTALOWANE:\n${uni_bullet}użytkownik mongo db, firewall, doinstalowane pakiety\n${uni_bullet}kopie zapasowe bazy danych" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 16 78
+            if ! [ $? -eq 1 ]; then
+                docker_compose_down
+                dialog --title " Odinstalowanie" --infobox "\n      Usuwanie plików\n   ... Proszę czekać ..." 6 32
+                rm -r "${MONGO_DB_DIR:?}/data"
+                rm -r "${CONFIG_ROOT_DIR:?}"
+                rm "$TOOL_LINK"
+                rm -r "${NIGHTSCOUT_ROOT_DIR:?}/tools"
+                rm -r "${NIGHTSCOUT_ROOT_DIR:?}/updates"
+                whiptail --title "Odinstalowano" --msgbox "$(center_multiline "Odinstalowano Nightscout z Mikr.us-a\n\nAby ponownie zainstalować, postępuj według instrukcji na stronie:\nhttps://t1d.dzienia.pl/mikrus\n\nDziękujemy i do zobaczenia!" 65)" 13 70
+                exit 0
             fi
             ;;
         "M)")
@@ -888,4 +952,30 @@ setup_done() {
     whiptail --title "Gotowe!" --yesno --defaultno "     Możesz teraz zamknąć to narzędzie lub wrócić do menu.\n       Narzędzie dostępne jest też jako komenda konsoli:\n\n                         nightscout-tool" --yes-button "$uni_menu" --no-button "$uni_finish" 12 70
     exit_on_no_cancel
     main_menu
+}
+
+install_or_menu() {
+    STATUS_NS=$(get_docker_status "ns-server")
+    if [ "$STATUS_NS" = "missing" ]; then
+
+        if [ "$freshInstall" -eq 0 ]; then
+            instal_now_prompt
+            if ! [ $? -eq 1 ]; then
+                freshInstall=1
+            fi
+        fi
+
+        if [ "$freshInstall" -gt 0 ]; then
+            ohai "Instalowanie Nightscout..."
+            docker_compose_up
+            domain_setup
+            admin_panel_promo
+            setup_done
+        else
+            main_menu
+        fi
+    else
+        msgok "Wykryto uruchomiony Nightscout"
+        main_menu
+    fi
 }

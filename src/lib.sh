@@ -17,8 +17,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.2.0"         #auto-update
-SCRIPT_BUILD_TIME="2023.07.23" #auto-update
+SCRIPT_VERSION="1.3.0"         #auto-update
+SCRIPT_BUILD_TIME="2023.09.04" #auto-update
 
 #=======================================
 # SETUP
@@ -107,6 +107,7 @@ tty_reset="$(tty_escape 0)"
 
 emoji_check="\U2705"
 emoji_ok="\U1F197"
+emoji_err="\U274C"
 
 uni_bullet="  $(printf '\u2022') "
 uni_bullet_pad="    "
@@ -121,6 +122,7 @@ uni_back=" $(printf '\U2B05') Wróć "
 uni_select=" Wybierz "
 uni_excl="$(printf '\U203C')"
 uni_confirm_del=" $(printf '\U1F4A3') Tak "
+uni_confirm_ch=" $(printf '\U1F199') Zmień "
 uni_confirm_upd=" $(printf '\U1F199') Aktualizuj "
 uni_install=" $(printf '\U1F680') Instaluj "
 uni_resign=" $(printf '\U1F6AB') Rezygnuję "
@@ -155,6 +157,11 @@ msgok() {
 msgcheck() {
     # shellcheck disable=SC2059
     printf "$emoji_check  $1\n"
+}
+
+msgerr() {
+    # shellcheck disable=SC2059
+    printf "$emoji_err  $1\n"
 }
 
 warn() {
@@ -365,6 +372,11 @@ check_dotenv() {
     add_if_not_ok_cmd "dotenv-tool" "npm install -g dotenv-tool --registry https://npm.dzienia.pl"
 }
 
+check_ufw() {
+    ufw --version >/dev/null 2>&1
+    add_if_not_ok "UFW" "ufw"
+}
+
 setup_packages() {
     # shellcheck disable=SC2145
     # shellcheck disable=SC2068
@@ -403,6 +415,54 @@ setup_dir_structure() {
     mkdir -p /srv/nightscout/tools
     mkdir -p $UPDATES_DIR
     chown -R mongodb:root $MONGO_DB_DIR
+}
+
+setup_firewall() {
+    ohai "Configuring firewall"
+
+    {
+        ufw default deny incoming 
+        ufw default allow outgoing
+
+        ufw allow OpenSSH
+        ufw allow ssh 
+    } >>$LOGTO 2>&1
+
+    host=$(hostname)
+    host=${host:1}
+
+    port1=$((10000+host))
+    port2=$((20000+host))
+    port3=$((30000+host))
+
+    if ufw allow $port1 >>$LOGTO 2>&1 ; then
+        msgcheck "Do regul firewalla poprawnie dodano port $port1"
+    else
+        msgerr "Blad dodawania $port1 do regul firewalla"
+    fi
+
+    if ufw allow $port2 >>$LOGTO 2>&1 ; then
+        msgcheck "Do regul firewalla poprawnie dodano port $port2"
+    else
+        msgerr "Blad dodawania $port2 do regul firewalla"
+    fi
+
+    if ufw allow $port3 >>$LOGTO 2>&1 ; then
+        msgcheck "Do regul firewalla poprawnie dodano port $port3"
+    else
+        msgerr "Blad dodawania $port3 do regul firewalla"
+    fi
+
+    ufw --force enable >>$LOGTO 2>&1
+}
+
+setup_firewall_for_ns() {
+    ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+    if ufw allow "$ns_external_port" >>$LOGTO 2>&1 ; then
+        msgcheck "Do regul firewalla poprawnie dodano port Nightscout: $ns_external_port"
+    else
+        msgerr "Blad dodawania portu Nightscout: $ns_external_port do reguł firewalla"
+    fi
 }
 
 get_docker_status() {
@@ -828,9 +888,73 @@ status_menu() {
     done
 }
 
-uninstall_menu() {
-    local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+version_menu() {
+
+    local tags=$(wget -q -O - "https://hub.docker.com/v2/namespaces/nightscout/repositories/cgm-remote-monitor/tags?page_size=100" | jq -r ".results[].name" | sed "/dev_[a-f0-9]*/d" |  sort --version-sort -u -r | head -n 8)
+
     while :; do
+    
+      local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+      local versions=()
+
+      while read -r line
+      do
+        if [ "$line" == "$ns_tag" ]; then
+          continue
+        fi
+
+        label=" - na sztywno $line "
+
+        if [ "$line" == "latest_dev" ]; then
+          label=" - najnowsza wersja rozwojowa "
+        fi
+
+        if [ "$line" == "latest" ]; then
+          label=" - aktualna wersja stabilna "
+        fi
+
+        versions+=("$line") 
+        versions+=("$label") 
+      done <<< "$tags"
+
+      versions+=("M)")
+      versions+=("Powrót do poprzedniego menu")
+
+      local CHOICE=$(whiptail --title "Wersja Nightscout" --menu "\nZmień wersję kontenera Nightscout z: $ns_tag na:\n\n" 20 60 10 \
+            "${versions[@]}" \
+            --ok-button="Zmień" --cancel-button="$uni_back" \
+            3>&2 2>&1 1>&3)
+
+        if [ "$CHOICE" == "M)" ]; then
+          break
+        fi
+
+        if [ "$CHOICE" == "" ]; then
+          break
+        fi
+
+        if [ "$CHOICE" == "$ns_tag" ]; then
+          whiptail --title "Ta sama wersja!" --msgbox "Wybrano bieżącą wersję - brak zmiany" 7 50
+        else
+          
+          whiptail --title "Zmienić wersję Nightscout?" --yesno --defaultno "Czy na pewno chcesz zmienić wersję z: $ns_tag na: $CHOICE?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}wersję można łatwo zmienić ponownie\n${uni_bullet}dane w bazie danych mogą ulec zmianie i NIE BYĆ kompatybilne" --yes-button "$uni_confirm_ch" --no-button "$uni_resign" 13 73
+            if ! [ $? -eq 1 ]; then
+                docker_compose_down
+                ohai "Changing Nightscout container tag from: $ns_tag to: $CHOICE"
+                dotenv-tool -pmr -i $ENV_FILE_DEP -- "NS_NIGHTSCOUT_TAG=$CHOICE"
+                docker_compose_up
+                whiptail --title "Zmieniono wersję Nightscout" --msgbox "$(center_multiline "Zmieniono wersję Nightscout na: $CHOICE\n\nSprawdź czy Nightscout działa poprawnie, w razie problemów:\n${uni_bullet}aktualizuj kontenery\n${uni_bullet}spróbuj wyczyścić bazę danych\n${uni_bullet}wróć do poprzedniej wersji ($ns_tag)" 65)" 13 70
+                break
+            fi
+        
+        fi
+
+    done
+}
+
+uninstall_menu() {
+  while :; do
+        local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
         local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 15 70 6 \
             "1)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
             "2)" "Usuń kontenery" \
@@ -842,6 +966,9 @@ uninstall_menu() {
             3>&2 2>&1 1>&3)
 
         case $CHOICE in
+        "1)")
+            version_menu
+            ;;
         "2)")
             whiptail --title "Usunąć kontenery?" --yesno --defaultno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
             if ! [ $? -eq 1 ]; then
@@ -895,8 +1022,10 @@ uninstall_menu() {
 
 main_menu() {
     while :; do
+        local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
         local quickStatus=$(center_text "Nightscout: $(get_container_status 'ns-server')" 55)
-        local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n$quickStatus\n" 19 60 8 \
+        local quickVersion=$(center_text "Wersja: $ns_tag" 55)
+        local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n$quickStatus\n$quickVersion\n" 19 60 8 \
             "1)" "Status kontenerów i logi" \
             "2)" "Pokaż port i API SECRET" \
             "3)" "Aktualizuj system" \
@@ -968,6 +1097,7 @@ install_or_menu() {
         if [ "$freshInstall" -gt 0 ]; then
             ohai "Instalowanie Nightscout..."
             docker_compose_up
+            setup_firewall_for_ns
             domain_setup
             admin_panel_promo
             setup_done

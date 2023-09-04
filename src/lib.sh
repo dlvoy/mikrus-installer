@@ -17,7 +17,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.3.1"         #auto-update
+SCRIPT_VERSION="1.3.2"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.04" #auto-update
 
 #=======================================
@@ -389,19 +389,33 @@ setup_node() {
     if [ $RESULT -eq 0 ]; then
         msgcheck "Node installed in correct version"
     else
-        ohai "Cleaning old Node.js"
-
-        rm -f /etc/apt/sources.list.d/nodesource.list 2> /dev/null
-
-        apt-get -yq --fix-broken install
-        apt-get -yq update
-        apt-get -yq remove nodejs nodejs-doc libnode*
+        # ohai "Cleaning old Node.js"
+        # {
+        #   rm -f /etc/apt/sources.list.d/nodesource.list
+        #   apt-get -yq --fix-broken install
+        #   apt-get -yq update
+        #   apt-get -yq remove nodejs nodejs-doc libnode*
+        # } >>$LOGTO 2>&1
 
         ohai "Preparing Node.js setup"
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - >/dev/null 2>&1
 
         ohai "Installing Node.js"
         apt-get install -y nodejs >>$LOGTO 2>&1
+
+        test_node
+        local RECHECK=$?
+        if [ $RECHECK -ne 0 ]; then
+
+          msgerr "Nie udało się zainstalować Node.js"
+          
+          msgerr "Instalacja Node.js jest skomplikowanym procesem i zależy od wersji systemu Linux i konfiguracji Mikr.us-a"
+          msgerr "Spróbuj ręcznie uruchomić instalację poniższą komendą i sprawdź czy pojawiają się błędy (i jakie):"
+          msgerr "    apt-get install -y nodejs   "
+          
+          exit 1
+        fi
+
     fi
 }
 
@@ -1107,7 +1121,7 @@ install_or_menu() {
             docker_compose_up
             setup_firewall_for_ns
             domain_setup
-            admin_panel_promo
+            # admin_panel_promo
             setup_done
         else
             main_menu

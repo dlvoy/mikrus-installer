@@ -17,7 +17,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.3.0"         #auto-update
+SCRIPT_VERSION="1.3.1"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.04" #auto-update
 
 #=======================================
@@ -389,6 +389,14 @@ setup_node() {
     if [ $RESULT -eq 0 ]; then
         msgcheck "Node installed in correct version"
     else
+        ohai "Cleaning old Node.js"
+
+        rm -f /etc/apt/sources.list.d/nodesource.list 2> /dev/null
+
+        apt-get -yq --fix-broken install
+        apt-get -yq update
+        apt-get -yq remove nodejs nodejs-doc libnode*
+
         ohai "Preparing Node.js setup"
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - >/dev/null 2>&1
 

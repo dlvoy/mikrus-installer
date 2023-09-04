@@ -1,6 +1,6 @@
 {
   "name": "@dlvoy/ns-installer-mikrus",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "Nightscout installer for mikr.us VPS",
   "main": "index.js",
   "scripts": {

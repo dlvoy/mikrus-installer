@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.3.2
+### version: 1.4.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -33,7 +33,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.3.2"         #auto-update
+SCRIPT_VERSION="1.4.0"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.04" #auto-update
 
 #=======================================
@@ -140,6 +140,7 @@ uni_excl="$(printf '\U203C')"
 uni_confirm_del=" $(printf '\U1F4A3') Tak "
 uni_confirm_ch=" $(printf '\U1F199') Zmień "
 uni_confirm_upd=" $(printf '\U1F199') Aktualizuj "
+uni_confirm_ed=" $(printf '\U1F4DD') Edytuj "
 uni_install=" $(printf '\U1F680') Instaluj "
 uni_resign=" $(printf '\U1F6AB') Rezygnuję "
 
@@ -390,7 +391,12 @@ check_dotenv() {
 
 check_ufw() {
     ufw --version >/dev/null 2>&1
-    add_if_not_ok "UFW" "ufw"
+    add_if_not_ok "Firewall" "ufw"
+}
+
+check_nano() {
+    nano --version >/dev/null 2>&1
+    add_if_not_ok "Text Editor" "nano"
 }
 
 setup_packages() {
@@ -405,13 +411,13 @@ setup_node() {
     if [ $RESULT -eq 0 ]; then
         msgcheck "Node installed in correct version"
     else
-        # ohai "Cleaning old Node.js"
-        # {
-        #   rm -f /etc/apt/sources.list.d/nodesource.list
-        #   apt-get -yq --fix-broken install
-        #   apt-get -yq update
-        #   apt-get -yq remove nodejs nodejs-doc libnode*
-        # } >>$LOGTO 2>&1
+        ohai "Cleaning old Node.js"
+        {
+          rm -f /etc/apt/sources.list.d/nodesource.list
+          apt-get -yq --fix-broken install
+          apt-get -yq update
+          apt-get -yq remove nodejs nodejs-doc libnode*
+        } >>$LOGTO 2>&1
 
         ohai "Preparing Node.js setup"
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - >/dev/null 2>&1
@@ -956,7 +962,7 @@ version_menu() {
       done <<< "$tags"
 
       versions+=("M)")
-      versions+=("Powrót do poprzedniego menu")
+      versions+=("   Powrót do poprzedniego menu")
 
       local CHOICE=$(whiptail --title "Wersja Nightscout" --menu "\nZmień wersję kontenera Nightscout z: $ns_tag na:\n\n" 20 60 10 \
             "${versions[@]}" \
@@ -993,27 +999,36 @@ version_menu() {
 uninstall_menu() {
   while :; do
         local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
-        local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 15 70 6 \
-            "1)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
-            "2)" "Usuń kontenery" \
-            "3)" "Wyczyść bazę danych" \
-            "4)" "Usuń kontenery, dane i konfigurację" \
-            "5)" "Usuń wszystko - odinstaluj" \
+        local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 17 70 7 \
+            "W)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
+            "E)" "Edytuj ustawienia (zmienne środowiskowe)" \
+            "K)" "Usuń kontenery" \
+            "B)" "Wyczyść bazę danych" \
+            "D)" "Usuń kontenery, dane i konfigurację" \
+            "U)" "Usuń wszystko - odinstaluj" \
             "M)" "Powrót do menu" \
             --ok-button="$uni_select" --cancel-button="$uni_back" \
             3>&2 2>&1 1>&3)
 
         case $CHOICE in
-        "1)")
+        "W)")
             version_menu
             ;;
-        "2)")
+        "E)")
+            whiptail --title "Edycja ustawień Nightscout" --yesno "Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO\n\nWskazówki co do obsługi edytora:\n${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O\n${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X\n\n $(printf "\U26A0") Edycja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")" --yes-button "$uni_confirm_ed" --no-button "$uni_resign" 15 68
+            if ! [ $? -eq 1 ]; then
+              nano $ENV_FILE_NS
+              docker_compose_down
+              docker_compose_up
+            fi
+            ;;
+        "K)")
             whiptail --title "Usunąć kontenery?" --yesno --defaultno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
             fi
             ;;
-        "3)")
+        "B)")
             whiptail --title "Usunąć dane z bazy danych?" --yesno --defaultno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
@@ -1022,7 +1037,7 @@ uninstall_menu() {
                 docker_compose_up
             fi
             ;;
-        "4)")
+        "D)")
             whiptail --title "Usunąć wszystkie dane?" --yesno --defaultno "Czy na pewno chcesz usunąć wszystkie dane i konfigurację?\n\n${uni_bullet}konfigurację panelu, ustawienia Nightscout\n${uni_bullet}wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
@@ -1034,7 +1049,7 @@ uninstall_menu() {
                 exit 0
             fi
             ;;
-        "5)")
+        "U)")
             whiptail --title "Odinstalować?" --yesno --defaultno "Czy na pewno chcesz usunąć wszystko?\n${uni_bullet}konfigurację panelu, ustawienia Nightscout\n${uni_bullet}wszystkie dane użytkownika (glikemia, status, profile)\n${uni_bullet}kontenery, skrypt nightscout-tool\n\nNIE ZOSTANĄ USUNIĘTE/ODINSTALOWANE:\n${uni_bullet}użytkownik mongo db, firewall, doinstalowane pakiety\n${uni_bullet}kopie zapasowe bazy danych" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 16 78
             if ! [ $? -eq 1 ]; then
                 docker_compose_down
@@ -1158,6 +1173,7 @@ check_docker
 check_docker_compose
 check_jq
 check_ufw
+check_nano
 setup_packages
 setup_node
 check_dotenv

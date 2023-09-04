@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.3.2
+### version: 1.4.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -31,6 +31,7 @@ check_docker
 check_docker_compose
 check_jq
 check_ufw
+check_nano
 setup_packages
 setup_node
 check_dotenv

@@ -311,11 +311,22 @@ MIKRUS_HOST=''
 # ACTIONS AND STEPS
 #=======================================
 
+check_interactive() {
+
+  shopt -q login_shell && echo 'Login shell' || echo 'Not login shell'
+
+	# if [[ $- == *i* ]]; then
+	#   msgok "Interactive setup"
+  # else
+  #    msgok "Non-interactive setup"
+	# fi
+}
+
 setup_update_repo() {
 	if [ "$aptGetWasUpdated" -eq "0" ]; then
 		aptGetWasUpdated=1
 		ohai "Updating package repository"
-		apt-get -yq update >>$LOGTO 2>&1
+		apt-get -yq update >>$LOGTO 2 >&1
 	fi
 }
 

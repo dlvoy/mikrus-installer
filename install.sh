@@ -34,7 +34,7 @@ TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 SCRIPT_VERSION="1.5.0"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.07" #auto-update
+SCRIPT_BUILD_TIME="2023.09.10" #auto-update
 
 #=======================================
 # SETUP
@@ -327,11 +327,22 @@ MIKRUS_HOST=''
 # ACTIONS AND STEPS
 #=======================================
 
+check_interactive() {
+
+  shopt -q login_shell && echo 'Login shell' || echo 'Not login shell'
+
+	# if [[ $- == *i* ]]; then
+	#   msgok "Interactive setup"
+  # else
+  #    msgok "Non-interactive setup"
+	# fi
+}
+
 setup_update_repo() {
 	if [ "$aptGetWasUpdated" -eq "0" ]; then
 		aptGetWasUpdated=1
 		ohai "Updating package repository"
-		apt-get -yq update >>$LOGTO 2>&1
+		apt-get -yq update >>$LOGTO 2 >&1
 	fi
 }
 
@@ -1165,6 +1176,7 @@ install_or_menu() {
 # MAIN SCRIPT
 #=======================================
 
+check_interactive
 check_git
 check_docker
 check_docker_compose
@@ -1178,6 +1190,9 @@ setup_users
 setup_dir_structure
 download_conf
 download_tools
+
+shopt -q login_shell && exit 0
+
 update_if_needed
 setup_firewall
 

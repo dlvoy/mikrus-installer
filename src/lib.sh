@@ -17,7 +17,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.1"         #auto-update
+SCRIPT_VERSION="1.5.2"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.11" #auto-update
 
 #=======================================
@@ -326,7 +326,7 @@ setup_update_repo() {
 	if [ "$aptGetWasUpdated" -eq "0" ]; then
 		aptGetWasUpdated=1
 		ohai "Updating package repository"
-		apt-get -yq update >>$LOGTO 2 >&1
+		apt-get -yq update >>$LOGTO 2>&1
 	fi
 }
 

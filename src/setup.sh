@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.0
+### version: 1.5.1
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -26,7 +26,7 @@ if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
 # MAIN SCRIPT
 #=======================================
 
-check_interactive
+# check_interactive
 check_git
 check_docker
 check_docker_compose
@@ -40,8 +40,6 @@ setup_users
 setup_dir_structure
 download_conf
 download_tools
-
-shopt -q login_shell && exit 0
 
 update_if_needed
 setup_firewall

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.0
+### version: 1.5.1
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -33,8 +33,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.0"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.10" #auto-update
+SCRIPT_VERSION="1.5.1"         #auto-update
+SCRIPT_BUILD_TIME="2023.09.11" #auto-update
 
 #=======================================
 # SETUP
@@ -1176,7 +1176,7 @@ install_or_menu() {
 # MAIN SCRIPT
 #=======================================
 
-check_interactive
+# check_interactive
 check_git
 check_docker
 check_docker_compose
@@ -1190,8 +1190,6 @@ setup_users
 setup_dir_structure
 download_conf
 download_tools
-
-shopt -q login_shell && exit 0
 
 update_if_needed
 setup_firewall

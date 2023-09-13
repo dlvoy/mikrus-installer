@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.2
+### version: 1.5.3
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -29,12 +29,13 @@ ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
 DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
+PROFANITY_DB_FILE=/srv/nightscout/data/profanity.db
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.2"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.11" #auto-update
+SCRIPT_VERSION="1.5.3"         #auto-update
+SCRIPT_BUILD_TIME="2023.09.13" #auto-update
 
 #=======================================
 # SETUP
@@ -329,12 +330,12 @@ MIKRUS_HOST=''
 
 check_interactive() {
 
-  shopt -q login_shell && echo 'Login shell' || echo 'Not login shell'
+	shopt -q login_shell && echo 'Login shell' || echo 'Not login shell'
 
 	# if [[ $- == *i* ]]; then
 	#   msgok "Interactive setup"
-  # else
-  #    msgok "Non-interactive setup"
+	# else
+	#    msgok "Non-interactive setup"
 	# fi
 }
 
@@ -565,6 +566,7 @@ download_conf() {
 	download_if_not_exists "deployment config" $ENV_FILE_DEP https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/deployment.env
 	download_if_not_exists "nightscout config" $ENV_FILE_NS https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env
 	download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml
+	download_if_not_exists "profanity database" $PROFANITY_DB_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db
 }
 
 download_tools() {
@@ -615,6 +617,7 @@ update_if_needed() {
 			curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/deployment.env"
 			curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env"
 			curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml"
+			curl -fsSL -o "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
 
 			local changed=0
 			local redeploy=0
@@ -751,27 +754,43 @@ prompt_mikrus_host() {
 prompt_mikrus_apikey() {
 	if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
 		freshInstall=$((freshInstall + 1))
-		whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" 16 70
-		exit_on_no_cancel
 
-		while :; do
-			MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --passwordbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
+		if [ -f "/klucz_api" ]; then
+			MIKRUS_APIKEY=$(cat "/klucz_api")
+			MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
+
+			if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]]; then
+				msgcheck "Mikrus OK"
+			else
+				MIKRUS_APIKEY=""
+			fi
+		fi
+
+		if ! [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
+
+			whiptail --title "Przygotuj klucz API" --msgbox "Do zarządzania mikrusem [$MIKRUS_HOST] potrzebujemy klucz API.\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję API, pod adresem:\n\n${uni_bullet_pad}https://mikr.us/panel/?a=api\n\n${uni_bullet}skopiuj do schowka wartość klucza API" 16 70
 			exit_on_no_cancel
-			if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
-				MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
 
-				if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]]; then
-					msgcheck "Mikrus OK"
-					break
+			while :; do
+				MIKRUS_APIKEY=$(whiptail --title "Podaj klucz API" --passwordbox "\nWpisz klucz API. Jeśli masz go skopiowanego w schowku,\nkliknij prawym przyciskiem i wybierz <wklej> z menu:" --cancel-button "Anuluj" 11 65 3>&1 1>&2 2>&3)
+				exit_on_no_cancel
+				if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
+					MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
+
+					if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]]; then
+						msgcheck "Mikrus OK"
+						break
+					else
+						whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key wydaje się mieć dobry format, ale NIE DZIAŁA!\nMoże to literówka lub podano API KEY z innego Mikr.us-a?.\n\nPotrzebujesz API KEY serwera [$MIKRUS_HOST]\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
+						exit_on_no_cancel
+					fi
 				else
-					whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key wydaje się mieć dobry format, ale NIE DZIAŁA!\nMoże to literówka lub podano API KEY z innego Mikr.us-a?.\n\nPotrzebujesz API KEY serwera [$MIKRUS_HOST]\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
+					whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
 					exit_on_no_cancel
 				fi
-			else
-				whiptail --title "$uni_excl Nieprawidłowy API key $uni_excl" --yesno "Podany API key ma nieprawidłowy format.\n\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_exit" 12 70
-				exit_on_no_cancel
-			fi
-		done
+			done
+
+		fi
 
 		ohai "Updating admin config (api key)"
 		dotenv-tool -pmr -i $ENV_FILE_ADMIN -- "MIKRUS_APIKEY=$MIKRUS_APIKEY"

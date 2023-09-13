@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.3
+### version: 1.5.4
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -34,7 +34,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.3"         #auto-update
+SCRIPT_VERSION="1.5.4"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.13" #auto-update
 
 #=======================================
@@ -869,9 +869,61 @@ docker_compose_down() {
 	process_gauge uninstall_containers uninstall_containers_progress "Zatrzymywanie Nightscouta" "Proszę czekać, trwa zatrzymywanie i usuwanie kontenerów..."
 }
 
+domain_setup_manual() {
+	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+	whiptail --title "Ustaw nomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut" 22 75
+}
+
 domain_setup() {
 	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-	whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut" 22 75
+	whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek domeny powinien:\n${uni_bullet}mieć długość od 4 do 8 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter, cyfr i podkreślenia _\n${uni_bullet}być unikalna, charakterystyczna i łatwa do zapamiętania" 16 75
+
+	while :; do
+		SUBDOMAIN=''
+		while :; do
+			SUBDOMAIN=$(whiptail --title "Podaj początek domeny" --passwordbox "\n(4-8 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
+
+			if [ $? -eq 1 ]; then
+				break
+			fi
+
+			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,7}$ ]]; then
+				break
+			else
+				whiptail --title "$uni_excl Nieprawidłowy początek domeny $uni_excl" --yesno "Podany początek domeny ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73
+				if [ $? -eq 1 ]; then
+					SUBDOMAIN=''
+					break
+				fi
+			fi
+		done
+
+		if [ "$SUBDOMAIN" == "" ]; then
+			domain_setup_manual
+			break
+		fi
+
+		local MHOST=$(hostname)
+		local APISEC=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+		local REGSTATUS=$(curl -sd "srv=$MHOST&key=$APISEC&domain=$SUBDOMAIN.ns.techdiab.pl" https://api.mikr.us/domain)
+		local STATOK=$(echo "$REGSTATUS" | jq -r ".ok")
+		local STATERR=$(echo "$REGSTATUS" | jq -r ".error")
+
+		if ! [ "$STATOK" == "null" ]; then
+			local msg="Ustawiono domenę:\n\n$SUBDOMAIN.ns.techdiab"
+			local width=$(multiline_length "$msg")
+			whiptail --title "Subdomena ustawiona" --msgbox "$(center_multiline "$msg" $((width + 4)))" 13 $((width + 9))
+			break
+		else
+			whiptail --title "$uni_excl Błąd rezerwacji domeny $uni_excl" --yesno "Nie udało się zarezerwować domeny:\n    $STATERR\n\nChcesz podać inną subdomenę?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73
+			if [ $? -eq 1 ]; then
+				SUBDOMAIN=''
+				domain_setup_manual
+				break
+			fi
+		fi
+	done
+
 }
 
 admin_panel_promo() {

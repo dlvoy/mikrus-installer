@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.4
+### version: 1.5.5
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -34,8 +34,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.4"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.13" #auto-update
+SCRIPT_VERSION="1.5.5"         #auto-update
+SCRIPT_BUILD_TIME="2023.09.14" #auto-update
 
 #=======================================
 # SETUP
@@ -310,7 +310,13 @@ center_multiline() {
 		# shellcheck disable=SC2005
 		echo "$(center_text "$line" "$maxLen")"
 	done
+}
 
+okdlg() {
+	local msg=$2
+	local lcount=$(echo -e "$2" | grep -c '^')
+	local width=$(multiline_length "$msg")
+	whiptail --title "$1" --msgbox "$(center_multiline "$msg" $((width + 4)))" $((lcount + 6)) $((width + 9))
 }
 
 #=======================================
@@ -713,9 +719,8 @@ update_if_needed() {
 }
 
 about_dialog() {
-	local msg="$(printf '\U1F9D1') (c) 2023 Dominik Dzienia\n$(printf '\U1F4E7') dominik.dzienia@gmail.com\n\n$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji CC BY-NC-ND 4.0\nhttps://creativecommons.org/licenses/by-nc-nd/4.0/deed.pl\n\nwersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)"
-	local width=$(multiline_length "$msg")
-	whiptail --title "O tym narzędziu..." --msgbox "$(center_multiline "$msg" $((width + 4)))" 13 $((width + 9))
+	okdlg "O tym narzędziu..." \
+		"$(printf '\U1F9D1') (c) 2023 Dominik Dzienia\n$(printf '\U1F4E7') dominik.dzienia@gmail.com\n\n$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji CC BY-NC-ND 4.0\nhttps://creativecommons.org/licenses/by-nc-nd/4.0/deed.pl\n\nwersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)"
 }
 
 prompt_welcome() {
@@ -876,26 +881,37 @@ domain_setup_manual() {
 
 domain_setup() {
 	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-	whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek domeny powinien:\n${uni_bullet}mieć długość od 4 do 8 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter, cyfr i podkreślenia _\n${uni_bullet}być unikalna, charakterystyczna i łatwa do zapamiętania" 16 75
+	whiptail --title "Ustaw subdomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek subdomeny powinien:\n${uni_bullet}mieć długość od 4 do 8 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter, cyfr i podkreślenia _\n${uni_bullet}być unikalny, charakterystyczny i łatwa do zapamiętania" 16 75
 
 	while :; do
 		SUBDOMAIN=''
 		while :; do
-			SUBDOMAIN=$(whiptail --title "Podaj początek domeny" --passwordbox "\n(4-8 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
+			SUBDOMAIN=$(whiptail --title "Podaj początek subdomeny" --passwordbox "\n(4-8 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
 
 			if [ $? -eq 1 ]; then
 				break
 			fi
 
 			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,7}$ ]]; then
+
+				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wf "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
+					okdlg "$uni_excl Nieprawidłowy początek subdomeny $uni_excl" \
+						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
+					SUBDOMAIN=''
+					continue
+				fi
+
 				break
+
 			else
-				whiptail --title "$uni_excl Nieprawidłowy początek domeny $uni_excl" --yesno "Podany początek domeny ma nieprawidłowy format.\nChcesz podać go ponownie?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73
+				okdlg "$uni_excl Nieprawidłowy początek subdomeny $uni_excl" \
+					"Podany początek subdomeny:\n$SUBDOMAIN\n\nma nieprawidłowy format. Wymyśl coś innego"
 				if [ $? -eq 1 ]; then
 					SUBDOMAIN=''
-					break
+					continue
 				fi
 			fi
+
 		done
 
 		if [ "$SUBDOMAIN" == "" ]; then
@@ -904,18 +920,21 @@ domain_setup() {
 		fi
 
 		local MHOST=$(hostname)
-		local APISEC=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+		local APISEC=$(dotenv-tool -r get -f $ENV_FILE_ADMIN "MIKRUS_APIKEY")
+
+		ohai "Rejestrowanie subdomeny $SUBDOMAIN.ns.techdiab.pl"
 		local REGSTATUS=$(curl -sd "srv=$MHOST&key=$APISEC&domain=$SUBDOMAIN.ns.techdiab.pl" https://api.mikr.us/domain)
-		local STATOK=$(echo "$REGSTATUS" | jq -r ".ok")
+		local STATOK=$(echo "$REGSTATUS" | jq -r ".status")
 		local STATERR=$(echo "$REGSTATUS" | jq -r ".error")
 
 		if ! [ "$STATOK" == "null" ]; then
-			local msg="Ustawiono domenę:\n\n$SUBDOMAIN.ns.techdiab"
-			local width=$(multiline_length "$msg")
-			whiptail --title "Subdomena ustawiona" --msgbox "$(center_multiline "$msg" $((width + 4)))" 13 $((width + 9))
+			msgcheck "Subdomena ustawiona poprawnie ($STATOK)"
+			okdlg "Subdomena ustawiona" \
+				"Ustawiono subdomenę:\n\n$SUBDOMAIN.ns.techdiab.pl\n($STATOK)\n\nZa kilka minut strona będzie widoczna z internetu."
 			break
 		else
-			whiptail --title "$uni_excl Błąd rezerwacji domeny $uni_excl" --yesno "Nie udało się zarezerwować domeny:\n    $STATERR\n\nChcesz podać inną subdomenę?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73
+			msgerr "Nie udało się ustawić subdomeny ($STATERR)"
+			whiptail --title "$uni_excl Błąd rezerwacji domeny $uni_excl" --yesno "Nie udało się zarezerwować subdomeny:\n    $STATERR\n\nChcesz podać inną subdomenę?" --yes-button "$uni_reenter" --no-button "$uni_noenter" 10 73
 			if [ $? -eq 1 ]; then
 				SUBDOMAIN=''
 				domain_setup_manual

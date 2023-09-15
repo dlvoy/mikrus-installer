@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.5
+### version: 1.5.6
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -34,8 +34,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.5"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.14" #auto-update
+SCRIPT_VERSION="1.5.6"         #auto-update
+SCRIPT_BUILD_TIME="2023.09.15" #auto-update
 
 #=======================================
 # SETUP
@@ -880,6 +880,17 @@ domain_setup_manual() {
 }
 
 domain_setup() {
+
+	local domain=$(get_td_domain)
+	local domainLen=${#domain}
+	if ((domainLen > 15)); then
+
+		msgcheck "Subdomena jest już skonfigurowana ($domain)"
+		okdlg "Subdomena już ustawiona" \
+			"Wykryto poprzednio skonfigurowaną subdomenę:\n\n$domain\n\nStrona Nightscout powinna być widoczna z internetu."
+		return
+	fi
+
 	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
 	whiptail --title "Ustaw subdomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek subdomeny powinien:\n${uni_bullet}mieć długość od 4 do 8 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter, cyfr i podkreślenia _\n${uni_bullet}być unikalny, charakterystyczny i łatwa do zapamiętania" 16 75
 
@@ -1171,12 +1182,29 @@ uninstall_menu() {
 	done
 }
 
+get_td_domain() {
+	local MHOST=$(hostname)
+	local APIKEY=$(dotenv-tool -r get -f $ENV_FILE_ADMIN "MIKRUS_APIKEY")
+	curl -sd "srv=$MHOST&key=$APIKEY" https://api.mikr.us/domain | jq -r ".[].name" | grep ".ns.techdiab.pl" | head -n 1
+}
+
+get_domain_status() {
+	local domain=$(get_td_domain)
+	local domainLen=${#domain}
+	if ((domainLen > 15)); then
+		printf "\U1F7E2 %s" "$domain"
+	else
+		printf "\U26AA nie zarejestrowano"
+	fi
+}
+
 main_menu() {
 	while :; do
 		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
 		local quickStatus=$(center_text "Nightscout: $(get_container_status 'ns-server')" 55)
 		local quickVersion=$(center_text "Wersja: $ns_tag" 55)
-		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n$quickStatus\n$quickVersion\n" 19 60 8 \
+		local quickDomain=$(center_text "Domena: $(get_domain_status 'ns-server')" 55)
+		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 19 60 8 \
 			"1)" "Status kontenerów i logi" \
 			"2)" "Pokaż port i API SECRET" \
 			"3)" "Aktualizuj system" \

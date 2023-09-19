@@ -35,7 +35,7 @@ TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 SCRIPT_VERSION="1.5.6"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.15" #auto-update
+SCRIPT_BUILD_TIME="2023.09.19" #auto-update
 
 #=======================================
 # SETUP
@@ -892,18 +892,18 @@ domain_setup() {
 	fi
 
 	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-	whiptail --title "Ustaw subdomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek subdomeny powinien:\n${uni_bullet}mieć długość od 4 do 8 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter, cyfr i podkreślenia _\n${uni_bullet}być unikalny, charakterystyczny i łatwa do zapamiętania" 16 75
+	whiptail --title "Ustaw subdomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek subdomeny powinien:\n${uni_bullet}mieć długość od 4 do 12 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter, cyfr i podkreślenia _\n${uni_bullet}być unikalny, charakterystyczny i łatwa do zapamiętania" 16 75
 
 	while :; do
 		SUBDOMAIN=''
 		while :; do
-			SUBDOMAIN=$(whiptail --title "Podaj początek subdomeny" --passwordbox "\n(4-8 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
+			SUBDOMAIN=$(whiptail --title "Podaj początek subdomeny" --passwordbox "\n(4-12 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
 
 			if [ $? -eq 1 ]; then
 				break
 			fi
 
-			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,7}$ ]]; then
+			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,11}$ ]]; then
 
 				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wf "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
 					okdlg "$uni_excl Nieprawidłowy początek subdomeny $uni_excl" \

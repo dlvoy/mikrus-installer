@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.9
+### version: 1.5.10
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -35,7 +35,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.9"         #auto-update
+SCRIPT_VERSION="1.5.10"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.29" #auto-update
 
 #=======================================
@@ -1118,9 +1118,12 @@ version_menu() {
 
 uninstall_menu() {
 	while :; do
+    local extraMenu=()
+    extraMenu+=("A)" "Ustaw adres strony (subdomenę)")
 		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
-		local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 17 70 7 \
-			"W)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
+		local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 17 70 8 \
+			"${extraMenu[@]}" \
+      "W)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
 			"E)" "Edytuj ustawienia (zmienne środowiskowe)" \
 			"K)" "Usuń kontenery" \
 			"B)" "Wyczyść bazę danych" \
@@ -1131,6 +1134,9 @@ uninstall_menu() {
 			3>&2 2>&1 1>&3)
 
 		case $CHOICE in
+		"A)")
+      domain_setup
+      ;;
 		"W)")
 			version_menu
 			;;

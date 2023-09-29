@@ -18,7 +18,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.6"         #auto-update
+SCRIPT_VERSION="1.5.7"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.15" #auto-update
 
 #=======================================
@@ -889,7 +889,7 @@ domain_setup() {
 
 			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,11}$ ]]; then
 
-				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wf "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
+				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wfx "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
 					okdlg "$uni_excl Nieprawidłowy początek subdomeny $uni_excl" \
 						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
 					SUBDOMAIN=''

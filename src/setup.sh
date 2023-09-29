@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.7
+### version: 1.5.9
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #

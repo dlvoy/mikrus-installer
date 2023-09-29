@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.8
+### version: 1.5.9
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -35,7 +35,7 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.8"         #auto-update
+SCRIPT_VERSION="1.5.9"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.29" #auto-update
 
 #=======================================
@@ -909,16 +909,16 @@ domain_setup() {
 
 			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,11}$ ]]; then
 
-				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wf "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
+				if printf "%s" "$SUBDOMAIN" | grep -f "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
 					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
 						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
 					SUBDOMAIN=''
 					continue
 				fi
 
-				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -xf "$RESERVED_DB_FILE" >>$LOGTO 2>&1; then
+				if printf "%s" "$SUBDOMAIN" | grep -xf "$RESERVED_DB_FILE" >>$LOGTO 2>&1; then
 					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
-						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
+						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta lub zarezerwowana.\n\nWymyśl coś innego"
 					SUBDOMAIN=''
 					continue
 				fi

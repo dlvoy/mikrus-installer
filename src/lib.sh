@@ -14,11 +14,12 @@ ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
 DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
 PROFANITY_DB_FILE=/srv/nightscout/data/profanity.db
+RESERVED_DB_FILE=/srv/nightscout/data/reserved.db
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.7"         #auto-update
+SCRIPT_VERSION="1.5.8"         #auto-update
 SCRIPT_BUILD_TIME="2023.09.15" #auto-update
 
 #=======================================
@@ -80,6 +81,7 @@ fi
 if [[ -n "${INTERACTIVE-}" && -n "${NONINTERACTIVE-}" ]]; then
 	abort 'Both `$INTERACTIVE` and `$NONINTERACTIVE` are set. Please unset at least one variable and try again.'
 fi
+
 
 # Check if script is run in POSIX mode
 if [[ -n "${POSIXLY_CORRECT+1}" ]]; then
@@ -557,6 +559,7 @@ download_conf() {
 	download_if_not_exists "nightscout config" $ENV_FILE_NS https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env
 	download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml
 	download_if_not_exists "profanity database" $PROFANITY_DB_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db
+	download_if_not_exists "reservation database" $RESERVED_DB_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db
 }
 
 download_tools() {
@@ -608,6 +611,7 @@ update_if_needed() {
 			curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env"
 			curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml"
 			curl -fsSL -o "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
+			curl -fsSL -o "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
 
 			local changed=0
 			local redeploy=0
@@ -860,7 +864,7 @@ docker_compose_down() {
 
 domain_setup_manual() {
 	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-	whiptail --title "Ustaw nomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut" 22 75
+	whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut" 22 75
 }
 
 domain_setup() {
@@ -881,7 +885,7 @@ domain_setup() {
 	while :; do
 		SUBDOMAIN=''
 		while :; do
-			SUBDOMAIN=$(whiptail --title "Podaj początek subdomeny" --passwordbox "\n(4-12 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
+			SUBDOMAIN=$(whiptail --title "Podaj początek subdomeny" --inputbox "\n(4-12 znaków, tylko: małe litery, cyfry oraz _)\n\n" --cancel-button "Anuluj" 12 60 3>&1 1>&2 2>&3)
 
 			if [ $? -eq 1 ]; then
 				break
@@ -889,8 +893,15 @@ domain_setup() {
 
 			if [[ "$SUBDOMAIN" =~ ^[a-z][a-zA-Z0-9_]{3,11}$ ]]; then
 
-				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wfx "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
-					okdlg "$uni_excl Nieprawidłowy początek subdomeny $uni_excl" \
+				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -wf "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
+					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
+						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
+					SUBDOMAIN=''
+					continue
+				fi
+
+				if printf "%s\n%s" "-$SUBDOMAIN" "$SUBDOMAIN" | grep -xf "$RESERVED_DB_FILE" >>$LOGTO 2>&1; then
+					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
 						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
 					SUBDOMAIN=''
 					continue

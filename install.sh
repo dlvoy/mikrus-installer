@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.10
+### version: 1.6.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -35,8 +35,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.5.10"         #auto-update
-SCRIPT_BUILD_TIME="2023.09.29" #auto-update
+SCRIPT_VERSION="1.6.0"         #auto-update
+SCRIPT_BUILD_TIME="2023.10.02" #auto-update
 
 #=======================================
 # SETUP
@@ -319,6 +319,13 @@ okdlg() {
 	local lcount=$(echo -e "$2" | grep -c '^')
 	local width=$(multiline_length "$msg")
 	whiptail --title "$1" --msgbox "$(center_multiline "$msg" $((width + 4)))" $((lcount + 6)) $((width + 9))
+}
+
+confirmdlg() {
+	local msg=$2
+	local lcount=$(echo -e "$2" | grep -c '^')
+	local width=$(multiline_length "$msg")
+	whiptail --title "$1" --ok-button "$3" --msgbox "$(center_multiline "$msg" $((width + 4)))" $((lcount + 6)) $((width + 9))
 }
 
 #=======================================
@@ -730,6 +737,12 @@ about_dialog() {
 prompt_welcome() {
 	whiptail --title "Witamy" --yesno "$(center_multiline "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." 65)" --yes-button "$uni_start" --no-button "$uni_exit" 12 70
 	exit_on_no_cancel
+}
+
+prompt_disclaimer() {
+  confirmdlg "Ostrzeżenie!" \
+    "Te narzędzie pozwala TOBIE zainstalować WŁASNĄ instancję Nightscout.\nTy odpowiadasz za ten serwer i ewentualne skutki jego używania.\nTy nim zarządzasz, to nie jest usługa czy produkt.\nTo rozwiązanie \"Zrób to sam\" - SAM za nie odpowiadasz!\n\nAutorzy skryptu nie ponoszą odpowiedzialności za skutki jego użycia!\nNie dajemy żadnych gwarancji co do jego poprawności czy dostępności!\nUżywasz go na własną odpowiedzialność!\nNie opieraj decyzji terapeutycznych na podstawie wskazań tego narzędzia!\n\nTwórcy tego narzędzia NIE SĄ administratorami Mikr.us-ów ani Hetznera!\nW razie problemów z dostępnością serwera najpierw sprawdź status Mikr.us-a!" \
+    "Zrozumiano!"
 }
 
 instal_now_prompt() {
@@ -1332,6 +1345,7 @@ setup_firewall
 source_admin
 
 prompt_welcome
+prompt_disclaimer
 prompt_mikrus_host
 prompt_mikrus_apikey
 prompt_api_secret

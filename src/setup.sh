@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.5.10
+### version: 1.6.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -47,6 +47,7 @@ setup_firewall
 source_admin
 
 prompt_welcome
+prompt_disclaimer
 prompt_mikrus_host
 prompt_mikrus_apikey
 prompt_api_secret

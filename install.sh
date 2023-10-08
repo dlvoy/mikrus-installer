@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.6.0
+### version: 1.6.1
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -35,8 +35,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.6.0"         #auto-update
-SCRIPT_BUILD_TIME="2023.10.02" #auto-update
+SCRIPT_VERSION="1.6.1"         #auto-update
+SCRIPT_BUILD_TIME="2023.10.08" #auto-update
 
 #=======================================
 # SETUP
@@ -97,7 +97,6 @@ fi
 if [[ -n "${INTERACTIVE-}" && -n "${NONINTERACTIVE-}" ]]; then
 	abort 'Both `$INTERACTIVE` and `$NONINTERACTIVE` are set. Please unset at least one variable and try again.'
 fi
-
 
 # Check if script is run in POSIX mode
 if [[ -n "${POSIXLY_CORRECT+1}" ]]; then
@@ -740,9 +739,9 @@ prompt_welcome() {
 }
 
 prompt_disclaimer() {
-  confirmdlg "Ostrzeżenie!" \
-    "Te narzędzie pozwala TOBIE zainstalować WŁASNĄ instancję Nightscout.\nTy odpowiadasz za ten serwer i ewentualne skutki jego używania.\nTy nim zarządzasz, to nie jest usługa czy produkt.\nTo rozwiązanie \"Zrób to sam\" - SAM za nie odpowiadasz!\n\nAutorzy skryptu nie ponoszą odpowiedzialności za skutki jego użycia!\nNie dajemy żadnych gwarancji co do jego poprawności czy dostępności!\nUżywasz go na własną odpowiedzialność!\nNie opieraj decyzji terapeutycznych na podstawie wskazań tego narzędzia!\n\nTwórcy tego narzędzia NIE SĄ administratorami Mikr.us-ów ani Hetznera!\nW razie problemów z dostępnością serwera najpierw sprawdź status Mikr.us-a!" \
-    "Zrozumiano!"
+	confirmdlg "Ostrzeżenie!" \
+		"Te narzędzie pozwala TOBIE zainstalować WŁASNĄ instancję Nightscout.\nTy odpowiadasz za ten serwer i ewentualne skutki jego używania.\nTy nim zarządzasz, to nie jest usługa czy produkt.\nTo rozwiązanie \"Zrób to sam\" - SAM za nie odpowiadasz!\n\nAutorzy skryptu nie ponoszą odpowiedzialności za skutki jego użycia!\nNie dajemy żadnych gwarancji co do jego poprawności czy dostępności!\nUżywasz go na własną odpowiedzialność!\nNie opieraj decyzji terapeutycznych na podstawie wskazań tego narzędzia!\n\nTwórcy tego narzędzia NIE SĄ administratorami Mikr.us-ów ani Hetznera!\nW razie problemów z dostępnością serwera najpierw sprawdź status Mikr.us-a!" \
+		"Zrozumiano!"
 }
 
 instal_now_prompt() {
@@ -1131,12 +1130,12 @@ version_menu() {
 
 uninstall_menu() {
 	while :; do
-    local extraMenu=()
-    extraMenu+=("A)" "Ustaw adres strony (subdomenę)")
+		local extraMenu=()
+		extraMenu+=("A)" "Ustaw adres strony (subdomenę)")
 		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
 		local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 17 70 8 \
 			"${extraMenu[@]}" \
-      "W)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
+			"W)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
 			"E)" "Edytuj ustawienia (zmienne środowiskowe)" \
 			"K)" "Usuń kontenery" \
 			"B)" "Wyczyść bazę danych" \
@@ -1148,17 +1147,23 @@ uninstall_menu() {
 
 		case $CHOICE in
 		"A)")
-      domain_setup
-      ;;
+			domain_setup
+			;;
 		"W)")
 			version_menu
 			;;
 		"E)")
-			whiptail --title "Edycja ustawień Nightscout" --yesno "Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO\n\nWskazówki co do obsługi edytora:\n${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O\n${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X\n\n $(printf "\U26A0") Edycja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")" --yes-button "$uni_confirm_ed" --no-button "$uni_resign" 15 68
-			if ! [ $? -eq 1 ]; then
-				nano $ENV_FILE_NS
-				docker_compose_down
-				docker_compose_up
+
+			if ! [[ "$0" =~ .*"/usr/bin/nightscout-tool" ]]; then
+				okdlg "Opcja niedostępna" \
+					"Edytor ustawień dostępny po uruchomieniu narzędzia komendą:\n\nnightscout-tool"
+			else
+				whiptail --title "Edycja ustawień Nightscout" --yesno "Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO\n\nWskazówki co do obsługi edytora:\n${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O\n${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X\n\n $(printf "\U26A0") Edycja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")" --yes-button "$uni_confirm_ed" --no-button "$uni_resign" 15 68
+				if ! [ $? -eq 1 ]; then
+					nano $ENV_FILE_NS
+					docker_compose_down
+					docker_compose_up
+				fi
 			fi
 			;;
 		"K)")

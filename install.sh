@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.6.1
+### version: 1.7.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -35,8 +35,8 @@ MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.6.1"         #auto-update
-SCRIPT_BUILD_TIME="2023.10.08" #auto-update
+SCRIPT_VERSION="1.7.0"         #auto-update
+SCRIPT_BUILD_TIME="2023.10.20" #auto-update
 
 #=======================================
 # SETUP
@@ -543,6 +543,11 @@ get_docker_status() {
 }
 
 install_containers() {
+	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up --no-recreate -d >>$LOGTO 2>&1
+}
+
+update_containers() {
+	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml pull >>$LOGTO 2>&1
 	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >>$LOGTO 2>&1
 }
 
@@ -883,7 +888,11 @@ prompt_api_secret() {
 }
 
 docker_compose_up() {
-	process_gauge install_containers install_containers_progress "Instalowanie Nightscouta" "Proszę czekać, trwa instalowanie kontenerów..."
+	process_gauge install_containers install_containers_progress "Uruchamianie Nightscouta" "Proszę czekać, trwa uruchamianie kontenerów..."
+}
+
+docker_compose_update() {
+	process_gauge update_containers install_containers_progress "Uruchamianie Nightscouta" "Proszę czekać, trwa aktualizacja kontenerów..."
 }
 
 docker_compose_down() {
@@ -1118,7 +1127,7 @@ version_menu() {
 				docker_compose_down
 				ohai "Changing Nightscout container tag from: $ns_tag to: $CHOICE"
 				dotenv-tool -pmr -i $ENV_FILE_DEP -- "NS_NIGHTSCOUT_TAG=$CHOICE"
-				docker_compose_up
+				docker_compose_update
 				whiptail --title "Zmieniono wersję Nightscout" --msgbox "$(center_multiline "Zmieniono wersję Nightscout na: $CHOICE\n\nSprawdź czy Nightscout działa poprawnie, w razie problemów:\n${uni_bullet}aktualizuj kontenery\n${uni_bullet}spróbuj wyczyścić bazę danych\n${uni_bullet}wróć do poprzedniej wersji ($ns_tag)" 65)" 13 70
 				break
 			fi
@@ -1162,7 +1171,7 @@ uninstall_menu() {
 				if ! [ $? -eq 1 ]; then
 					nano $ENV_FILE_NS
 					docker_compose_down
-					docker_compose_up
+					docker_compose_update
 				fi
 			fi
 			;;
@@ -1178,7 +1187,7 @@ uninstall_menu() {
 				docker_compose_down
 				dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
 				rm -r "${MONGO_DB_DIR:?}/data"
-				docker_compose_up
+				docker_compose_update
 			fi
 			;;
 		"D)")
@@ -1239,13 +1248,14 @@ main_menu() {
 		local quickStatus=$(center_text "Nightscout: $(get_container_status 'ns-server')" 55)
 		local quickVersion=$(center_text "Wersja: $ns_tag" 55)
 		local quickDomain=$(center_text "Domena: $(get_domain_status 'ns-server')" 55)
-		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 19 60 8 \
+    local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 20 60 9 \
 			"1)" "Status kontenerów i logi" \
 			"2)" "Pokaż port i API SECRET" \
-			"3)" "Aktualizuj system" \
-			"4)" "Aktualizuj to narzędzie" \
-			"5)" "Aktualizuj kontenery" \
-			"6)" "Zmień lub odinstaluj" \
+			"S)" "Aktualizuj system" \
+			"N)" "Aktualizuj to narzędzie" \
+			"K)" "Aktualizuj kontenery" \
+			"R)" "Uruchom ponownie kontenery" \
+			"Z)" "Zmień lub odinstaluj" \
 			"I)" "O tym narzędziu..." \
 			"X)" "Wyjście" \
 			--ok-button="$uni_select" --cancel-button="$uni_exit" \
@@ -1260,7 +1270,7 @@ main_menu() {
 			local ns_api_secret=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
 			whiptail --title "Podgląd konfiguracji Nightscout" --msgbox "\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" 10 60
 			;;
-		"3)")
+		"S)")
 			ohai "Updating package list"
 			dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33
 			apt-get -yq update >>$LOGTO 2>&1
@@ -1268,14 +1278,18 @@ main_menu() {
 			dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33
 			apt-get -yq upgrade >>$LOGTO 2>&1
 			;;
-		"4)")
+		"N)")
 			update_if_needed "Wszystkie pliki narzędzia są aktualne"
 			;;
-		"5)")
+		"K)")
+			docker_compose_down
+			docker_compose_update
+			;;
+		"R)")
 			docker_compose_down
 			docker_compose_up
 			;;
-		"6)")
+		"Z)")
 			uninstall_menu
 			;;
 		"I)")
@@ -1310,7 +1324,7 @@ install_or_menu() {
 
 		if [ "$freshInstall" -gt 0 ]; then
 			ohai "Instalowanie Nightscout..."
-			docker_compose_up
+			docker_compose_update
 			setup_firewall_for_ns
 			domain_setup
 			# admin_panel_promo

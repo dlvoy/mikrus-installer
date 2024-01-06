@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.7.0
+### version: 1.8.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -31,12 +31,18 @@ ENV_FILE_DEP=/srv/nightscout/config/deployment.env
 DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
 PROFANITY_DB_FILE=/srv/nightscout/data/profanity.db
 RESERVED_DB_FILE=/srv/nightscout/data/reserved.db
+WATCHDOG_STATUS_FILE=/srv/nightscout/data/watchdog_status
+WATCHDOG_TIME_FILE=/srv/nightscout/data/watchdog_time
+WATCHDOG_LOG_FILE=/srv/nightscout/data/watchdog.log
+WATCHDOG_CRON_LOG=/srv/nightscout/data/watchdog-cron.log
+UPDATE_CHANNEL_FILE=/srv/nightscout/data/update_channel
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
-SCRIPT_VERSION="1.7.0"         #auto-update
-SCRIPT_BUILD_TIME="2023.10.20" #auto-update
+UPDATE_CHANNEL=master
+SCRIPT_VERSION="1.8.0"         #auto-update
+SCRIPT_BUILD_TIME="2024.01.06" #auto-update
 
 #=======================================
 # SETUP
@@ -423,6 +429,11 @@ check_nano() {
 	add_if_not_ok "Text Editor" "nano"
 }
 
+check_dateutils() {
+	dateutils.ddiff --version >/dev/null 2>&1
+	add_if_not_ok "Date Utils" "dateutils"
+}
+
 setup_packages() {
 	# shellcheck disable=SC2145
 	# shellcheck disable=SC2068
@@ -533,6 +544,18 @@ setup_firewall_for_ns() {
 	fi
 }
 
+install_cron() {
+  local croncmd="$TOOL_LINK -w > $WATCHDOG_CRON_LOG 2>&1"
+  local cronjob="*/5 * * * * $croncmd"
+  msgok "Configuring watchdog..."
+  ( crontab -l | grep -v -F "$croncmd" || : ; echo "$cronjob" ) | crontab -
+}
+
+uninstall_cron() {
+  local croncmd="nightscout-tool"
+  ( crontab -l | grep -v -F "$croncmd" ) | crontab -
+}
+
 get_docker_status() {
 	local ID=$(docker ps -a --no-trunc --filter name="^$1" --format '{{ .ID }}')
 	if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
@@ -582,18 +605,18 @@ source_admin() {
 }
 
 download_conf() {
-	download_if_not_exists "deployment config" $ENV_FILE_DEP https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/deployment.env
-	download_if_not_exists "nightscout config" $ENV_FILE_NS https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env
-	download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml
-	download_if_not_exists "profanity database" $PROFANITY_DB_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db
-	download_if_not_exists "reservation database" $RESERVED_DB_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db
+	download_if_not_exists "deployment config" $ENV_FILE_DEP "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
+	download_if_not_exists "nightscout config" $ENV_FILE_NS "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
+	download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
+	download_if_not_exists "profanity database" $PROFANITY_DB_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
+	download_if_not_exists "reservation database" $RESERVED_DB_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
 }
 
 download_tools() {
-	download_if_not_exists "update stamp" "$UPDATES_DIR/updated" https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated
+	download_if_not_exists "update stamp" "$UPDATES_DIR/updated" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated"
 
 	if ! [[ -f $TOOL_FILE ]]; then
-		download_if_not_exists "nightscout-tool file" $TOOL_FILE https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/install.sh
+		download_if_not_exists "nightscout-tool file" $TOOL_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
 		local timestamp=$(date +%s)
 		echo "$timestamp" >"$UPDATES_DIR/timestamp"
 	else
@@ -624,7 +647,7 @@ update_if_needed() {
 
 	if [ $((timestamp - lastUpdate)) -gt $((60 * 60 * 24)) ] || [ $# -eq 1 ]; then
 		echo "$timestamp" >"$UPDATES_DIR/timestamp"
-		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/updated")"
+		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
 		local lastUpdate=$(cat "$UPDATES_DIR/updated")
 		if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ]; then
 			msgok "Scripts and config files are up to date"
@@ -633,10 +656,10 @@ update_if_needed() {
 			fi
 		else
 			ohai "Updating scripts and config files"
-			curl -fsSL -o "$UPDATES_DIR/install.sh" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/install.sh"
-			curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/deployment.env"
-			curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/nightscout.env"
-			curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/master/templates/docker-compose.yml"
+			curl -fsSL -o "$UPDATES_DIR/install.sh" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
+			curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
+			curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
+			curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
 			curl -fsSL -o "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
 			curl -fsSL -o "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
 
@@ -1022,6 +1045,16 @@ get_container_status() {
 	fi
 }
 
+get_container_status_code() {
+	local ID=$(docker ps -a --no-trunc --filter name="^$1$" --format '{{ .ID }}')
+	if [[ "$ID" =~ [0-9a-fA-F]{12,} ]]; then
+		local status=$(docker inspect "$ID" | jq -r ".[0].State.Status")
+		echo "$status"
+	else
+		echo "unknown"
+	fi
+}
+
 show_logs() {
 	local col=$((COLUMNS - 10))
 	local rws=$((LINES - 3))
@@ -1207,6 +1240,7 @@ uninstall_menu() {
 			if ! [ $? -eq 1 ]; then
 				docker_compose_down
 				dialog --title " Odinstalowanie" --infobox "\n      Usuwanie plików\n   ... Proszę czekać ..." 6 32
+        uninstall_cron
 				rm -r "${MONGO_DB_DIR:?}/data"
 				rm -r "${CONFIG_ROOT_DIR:?}"
 				rm "$TOOL_LINK"
@@ -1248,7 +1282,7 @@ main_menu() {
 		local quickStatus=$(center_text "Nightscout: $(get_container_status 'ns-server')" 55)
 		local quickVersion=$(center_text "Wersja: $ns_tag" 55)
 		local quickDomain=$(center_text "Domena: $(get_domain_status 'ns-server')" 55)
-    local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 20 60 9 \
+		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 20 60 9 \
 			"1)" "Status kontenerów i logi" \
 			"2)" "Pokaż port i API SECRET" \
 			"S)" "Aktualizuj system" \
@@ -1338,11 +1372,157 @@ install_or_menu() {
 	fi
 }
 
+watchdog_check() {
+	echo "Nightscout Watchdog mode"
+
+	WATCHDOG_LAST_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	WATCHDOG_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	WATCHDOG_LAST_STATUS="unknown"
+	WATCHDOG_STATUS="unknown"
+
+	if [[ -f $WATCHDOG_TIME_FILE ]]; then
+		echo "Found $WATCHDOG_TIME_FILE"
+		WATCHDOG_LAST_TIME=$(cat $WATCHDOG_TIME_FILE)
+	else
+		echo "First watchdog run"
+	fi
+
+	if [[ -f $WATCHDOG_STATUS_FILE ]]; then
+		echo "Found $WATCHDOG_STATUS_FILE"
+		WATCHDOG_LAST_STATUS=$(cat $WATCHDOG_STATUS_FILE)
+	fi
+
+	local STATUS_AGO=$(dateutils.ddiff "$WATCHDOG_TIME" "$WATCHDOG_LAST_TIME" -f '%S')
+
+	if [ "$STATUS_AGO" -gt 900 ]; then
+		echo "Watchdog last status is $STATUS_AGO seconds old, ignoring"
+		WATCHDOG_LAST_STATUS="unknown"
+	fi
+
+	local NS_STATUS=$(get_container_status_code 'ns-server')
+	local DB_STATUS=$(get_container_status_code 'ns-database')
+	local COMBINED_STATUS="$NS_STATUS $DB_STATUS"
+
+	echo "Server container: $NS_STATUS"
+	echo "Database container: $DB_STATUS"
+
+	if [ "$COMBINED_STATUS" = "running running" ]; then
+		echo "Will check page contents"
+		local ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+		local html=$(curl -s "127.0.0.1:$ns_external_port")
+
+		WATCHDOG_STATUS="detection_failed"
+
+		if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
+			echo "Nightscout is running"
+			WATCHDOG_STATUS="ok"
+		fi
+
+		if [[ "$html" =~ 'MongoDB connection failed' ]]; then
+			echo "Nightscout is crashed, restarting..."
+			WATCHDOG_STATUS="restart"
+      if [ "$WATCHDOG_LAST_STATUS" != "restart" ]; then
+        docker restart 'ns-server'
+        echo "...done"
+      fi
+		fi
+
+    regex3='MIKR.US - coś poszło nie tak'
+		if [[ "$html" =~ $regex3 ]]; then
+			echo "Nightscout is still restarting..."
+			WATCHDOG_STATUS="restarting"
+		fi
+
+	else
+		if [ "$NS_STATUS" = "restarting" ] || [ "$DB_STATUS" = "restarting" ]; then
+			WATCHDOG_STATUS="restarting"
+		else
+			WATCHDOG_STATUS="not_running"
+		fi
+	fi
+
+	echo "Watchdog observation: $WATCHDOG_STATUS"
+
+	# if [ "$WATCHDOG_LAST_STATUS" != "$WATCHDOG_STATUS" ]; then
+	echo "$WATCHDOG_TIME [$WATCHDOG_STATUS]" >>$WATCHDOG_LOG_FILE
+	LOGSIZE=$(wc -l <$WATCHDOG_LOG_FILE)
+	if [ "$LOGSIZE" -gt 1000 ]; then
+		tail -1000 $WATCHDOG_LOG_FILE >"$WATCHDOG_LOG_FILE.tmp"
+		mv -f "$WATCHDOG_LOG_FILE.tmp" "$WATCHDOG_LOG_FILE"
+	fi
+	# fi
+
+	echo "$WATCHDOG_TIME" >$WATCHDOG_TIME_FILE
+	echo "$WATCHDOG_STATUS" >$WATCHDOG_STATUS_FILE
+
+	exit 0
+}
+
+load_update_channel() {
+	if [[ -f $UPDATE_CHANNEL_FILE ]]; then
+		UPDATE_CHANNEL=$(cat $UPDATE_CHANNEL_FILE)
+    msgok "Loaded update channel: $UPDATE_CHANNEL"
+	fi
+}
+
+parse_commandline_args() {
+
+  load_update_channel
+
+	CMDARGS=$(getopt --quiet -o wvdp --long watchdog,version,develop,production -n 'nightscout-tool' -- "$@")
+
+	# shellcheck disable=SC2181
+	if [ $? != 0 ]; then
+		echo "Invalid arguments: " "$@" >&2
+		exit 1
+	fi
+
+	# Note the quotes around '$TEMP': they are essential!
+	eval set -- "$CMDARGS"
+
+	WATCHDOGMODE=false
+	while true; do
+		case "$1" in
+		-w | --watchdog)
+			WATCHDOGMODE=true
+			shift
+			;;
+		-v | --version)
+			echo "$SCRIPT_VERSION"
+			exit 0
+			;;
+		-d | --develop)
+        warn "Switching to DEVELOP update channel"
+        UPDATE_CHANNEL=develop
+        echo "$UPDATE_CHANNEL" > $UPDATE_CHANNEL_FILE
+  			shift
+			;;
+		-p | --production)
+        warn "Switching to PRODUCTION update channel"
+        UPDATE_CHANNEL=master
+        echo "$UPDATE_CHANNEL" > $UPDATE_CHANNEL_FILE
+  			shift
+			;;
+		--)
+			shift
+			break
+			;;
+		*) break ;;
+		esac
+	done
+
+	if [ "$WATCHDOGMODE" = "true" ]; then
+		watchdog_check
+	fi
+
+}
+
 
 #=======================================
 # MAIN SCRIPT
 #=======================================
 
+parse_commandline_args "$@"
 # check_interactive
 check_git
 check_docker
@@ -1350,6 +1530,7 @@ check_docker_compose
 check_jq
 check_ufw
 check_nano
+check_dateutils
 setup_packages
 setup_node
 check_dotenv
@@ -1360,6 +1541,7 @@ download_tools
 
 update_if_needed
 setup_firewall
+install_cron
 
 source_admin
 

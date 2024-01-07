@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.7.0
+### version: 1.8.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -26,6 +26,8 @@ if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
 # MAIN SCRIPT
 #=======================================
 
+startup_version
+parse_commandline_args "$@"
 # check_interactive
 check_git
 check_docker
@@ -33,6 +35,7 @@ check_docker_compose
 check_jq
 check_ufw
 check_nano
+check_dateutils
 setup_packages
 setup_node
 check_dotenv
@@ -43,6 +46,7 @@ download_tools
 
 update_if_needed
 setup_firewall
+install_cron
 
 source_admin
 

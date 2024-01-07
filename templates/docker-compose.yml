@@ -1,4 +1,4 @@
-### version: 1.0.1
+### version: 1.8.0
 
 version: "2"
 
@@ -9,10 +9,12 @@ networks:
 services:
   mongodb:
     container_name: ns-database
-    mem_limit: 200m
+    mem_limit: 400m
     mem_reservation: 100M
     restart: always
     image: "bitnami/mongodb:${NS_MONGODB_TAG}"
+    environment:
+      - MONGODB_EXTRA_FLAGS=--wiredTigerCacheSizeGB=0.4
     volumes:
       - "${NS_DATA_DIR}/mongodb:/bitnami/mongodb"
     ports:

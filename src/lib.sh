@@ -334,6 +334,7 @@ confirmdlg() {
 packages=()
 aptGetWasUpdated=0
 freshInstall=0
+cachedMenuDomain=''
 
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
@@ -1071,10 +1072,18 @@ get_watchdog_status_code_live() {
 	local COMBINED_STATUS="$NS_STATUS $DB_STATUS"
 
 	if [ "$COMBINED_STATUS" = "running running" ]; then
-		local domain=$(get_td_domain)
+	
+		status="detection_failed"
+
+    local domain=$cachedMenuDomain
+		local cachedDomainLen=${#cachedMenuDomain}
+		if ((cachedDomainLen < 16)); then
+      domain=$(get_td_domain)       
+    fi
+
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
-
+      cachedMenuDomain=$domain
 			local html=$(curl -Lks "$domain")
 
 			if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
@@ -1091,7 +1100,7 @@ get_watchdog_status_code_live() {
 			fi
 
 		else
-			status="detection_failed"
+			status="domain_failed"
 		fi
 
 	else
@@ -1125,6 +1134,9 @@ get_watchdog_status() {
 		;;
 	"detection_failed")
 		printf "\U2753 nieznany stan"
+		;;
+	"domain_failed")
+		printf "\U2753 problem z domeną"
 		;;
 	"crashed")
 		printf "\U1F4A5 awaria NS"
@@ -1590,7 +1602,7 @@ watchdog_check() {
 			fi
 
 		else
-			WATCHDOG_STATUS="detection_failed"
+			WATCHDOG_STATUS="domain_failed"
 		fi
 
 	else

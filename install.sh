@@ -1088,18 +1088,18 @@ get_watchdog_status_code_live() {
 	local COMBINED_STATUS="$NS_STATUS $DB_STATUS"
 
 	if [ "$COMBINED_STATUS" = "running running" ]; then
-	
+
 		status="detection_failed"
 
-    local domain=$cachedMenuDomain
+		local domain=$cachedMenuDomain
 		local cachedDomainLen=${#cachedMenuDomain}
 		if ((cachedDomainLen < 16)); then
-      domain=$(get_td_domain)       
-    fi
+			domain=$(get_td_domain)
+		fi
 
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
-      cachedMenuDomain=$domain
+			cachedMenuDomain=$domain
 			local html=$(curl -Lks "$domain")
 
 			if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
@@ -1180,12 +1180,18 @@ show_watchdog_logs() {
 		get_watchdog_age_string
 		echo "-------------------------------------------------------"
 
-		echo "Statusy ostatnich przebiegów watchdoga:"
-		tail -5 "$WATCHDOG_LOG_FILE"
+		if [[ -f $WATCHDOG_LOG_FILE ]]; then
+			echo "Statusy ostatnich przebiegów watchdoga:"
+			tail -5 "$WATCHDOG_LOG_FILE"
+		else
+			echo "Brak logów z ostatnich przebiegów watchdoga"
+		fi
 		echo "-------------------------------------------------------"
 
-		echo "Log ostatniego przebiegu watchdoga:"
-		cat "$WATCHDOG_CRON_LOG"
+		if [[ -f $WATCHDOG_CRON_LOG ]]; then
+			echo "Log ostatniego przebiegu watchdoga:"
+			cat "$WATCHDOG_CRON_LOG"
+		fi
 	} >"$tmpfile"
 
 	whiptail --title "Logi Watchdoga" --scrolltext --textbox "$tmpfile" $rws $col

@@ -1013,13 +1013,13 @@ admin_panel_promo() {
 }
 
 get_watchdog_age_string() {
-	local curr_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 	local last_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	local curr_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 	if [[ -f $WATCHDOG_TIME_FILE ]]; then
 		last_time=$(cat $WATCHDOG_TIME_FILE)
 		local status_ago=$(dateutils.ddiff "$last_time" "$curr_time" -f '%Mmin. %Ssek.')
-    echo "$last_time ($status_ago temu)"
+		echo "$last_time ($status_ago temu)"
 	else
 		echo "jescze nie uruchomiony"
 	fi
@@ -1072,19 +1072,26 @@ get_watchdog_status_code_live() {
 
 	if [ "$COMBINED_STATUS" = "running running" ]; then
 		local domain=$(get_td_domain)
-		local html=$(curl -Lks "$domain")
+		local domainLen=${#domain}
+		if ((domainLen > 15)); then
 
-		if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
-			status="ok"
-		fi
+			local html=$(curl -Lks "$domain")
 
-		if [[ "$html" =~ 'MongoDB connection failed' ]]; then
-			status="crashed"
-		fi
+			if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
+				status="ok"
+			fi
 
-		regex3='MIKR.US - coś poszło nie tak'
-		if [[ "$html" =~ $regex3 ]]; then
-			status="restarting"
+			if [[ "$html" =~ 'MongoDB connection failed' ]]; then
+				status="crashed"
+			fi
+
+			regex3='MIKR.US - coś poszło nie tak'
+			if [[ "$html" =~ $regex3 ]]; then
+				status="restarting"
+			fi
+
+		else
+			status="detection_failed"
 		fi
 
 	else
@@ -1150,7 +1157,7 @@ show_watchdog_logs() {
 		echo "-------------------------------------------------------"
 
 		echo "Log ostatniego przebiegu watchdoga:"
-    cat "$WATCHDOG_CRON_LOG"
+		cat "$WATCHDOG_CRON_LOG"
 	} >"$tmpfile"
 
 	whiptail --title "Logi Watchdoga" --scrolltext --textbox "$tmpfile" $rws $col
@@ -1555,28 +1562,35 @@ watchdog_check() {
 	if [ "$COMBINED_STATUS" = "running running" ]; then
 		echo "Will check page contents"
 		local domain=$(get_td_domain)
-		local html=$(curl -Lks "$domain")
 
-		WATCHDOG_STATUS="detection_failed"
+		local domainLen=${#domain}
+		if ((domainLen > 15)); then
+			local html=$(curl -Lks "$domain")
 
-		if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
-			echo "Nightscout is running"
-			WATCHDOG_STATUS="ok"
-		fi
+			WATCHDOG_STATUS="detection_failed"
 
-		if [[ "$html" =~ 'MongoDB connection failed' ]]; then
-			echo "Nightscout is crashed, restarting..."
-			WATCHDOG_STATUS="restart"
-			if [ "$WATCHDOG_LAST_STATUS" != "restart" ]; then
-				docker restart 'ns-server'
-				echo "...done"
+			if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
+				echo "Nightscout is running"
+				WATCHDOG_STATUS="ok"
 			fi
-		fi
 
-		regex3='MIKR.US - coś poszło nie tak'
-		if [[ "$html" =~ $regex3 ]]; then
-			echo "Nightscout is still restarting..."
-			WATCHDOG_STATUS="restarting"
+			if [[ "$html" =~ 'MongoDB connection failed' ]]; then
+				echo "Nightscout is crashed, restarting..."
+				WATCHDOG_STATUS="restart"
+				if [ "$WATCHDOG_LAST_STATUS" != "restart" ]; then
+					docker restart 'ns-server'
+					echo "...done"
+				fi
+			fi
+
+			regex3='MIKR.US - coś poszło nie tak'
+			if [[ "$html" =~ $regex3 ]]; then
+				echo "Nightscout is still restarting..."
+				WATCHDOG_STATUS="restarting"
+			fi
+
+		else
+			WATCHDOG_STATUS="detection_failed"
 		fi
 
 	else

@@ -6,7 +6,7 @@
 #=======================================
 
 REQUIRED_NODE_VERSION=18.0.0
-LOGTO=/dev/null
+LOGTO=/srv/nightscout/data/debug.log
 NIGHTSCOUT_ROOT_DIR=/srv/nightscout
 CONFIG_ROOT_DIR=/srv/nightscout/config
 ENV_FILE_ADMIN=/srv/nightscout/config/admin.env

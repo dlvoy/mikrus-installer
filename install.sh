@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.8.0
+### version: 1.8.1
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -34,6 +34,7 @@ RESERVED_DB_FILE=/srv/nightscout/data/reserved.db
 WATCHDOG_STATUS_FILE=/srv/nightscout/data/watchdog_status
 WATCHDOG_TIME_FILE=/srv/nightscout/data/watchdog_time
 WATCHDOG_LOG_FILE=/srv/nightscout/data/watchdog.log
+WATCHDOG_FAILURES_FILE=/srv/nightscout/data/watchdog-failures.log
 WATCHDOG_CRON_LOG=/srv/nightscout/data/watchdog-cron.log
 UPDATE_CHANNEL_FILE=/srv/nightscout/data/update_channel
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
@@ -41,8 +42,8 @@ TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
-SCRIPT_VERSION="1.8.0"         #auto-update
-SCRIPT_BUILD_TIME="2024.01.07" #auto-update
+SCRIPT_VERSION="1.8.1"         #auto-update
+SCRIPT_BUILD_TIME="2024.01.17" #auto-update
 
 #=======================================
 # SETUP
@@ -1599,7 +1600,7 @@ watchdog_check() {
 
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
-			local html=$(curl -Lks "$domain")
+			local html=$(curl -Lksi "$domain")
 
 			WATCHDOG_STATUS="detection_failed"
 
@@ -1621,6 +1622,15 @@ watchdog_check() {
 			if [[ "$html" =~ $regex3 ]]; then
 				echo "Nightscout is still restarting..."
 				WATCHDOG_STATUS="restarting"
+			fi
+
+			if [ "$WATCHDOG_STATUS" = "detection_failed" ]; then
+				{
+					echo "----------------------------------------------------------------"
+					echo "[$WATCHDOG_TIME] Unknown server failure:"
+					echo "HTTP DUMP:"
+					echo "$html"
+				} >>"$WATCHDOG_FAILURES_FILE"
 			fi
 
 		else
@@ -1645,6 +1655,12 @@ watchdog_check() {
 		mv -f "$WATCHDOG_LOG_FILE.tmp" "$WATCHDOG_LOG_FILE"
 	fi
 	# fi
+
+	FAILSIZE=$(wc -l <$WATCHDOG_FAILURES_FILE)
+	if [ "$FAILSIZE" -gt 10000 ]; then
+		tail -10000 $WATCHDOG_FAILURES_FILE >"$WATCHDOG_FAILURES_FILE.tmp"
+		mv -f "$WATCHDOG_FAILURES_FILE.tmp" "$WATCHDOG_FAILURES_FILE"
+	fi
 
 	echo "$WATCHDOG_TIME" >$WATCHDOG_TIME_FILE
 	echo "$WATCHDOG_STATUS" >$WATCHDOG_STATUS_FILE

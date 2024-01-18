@@ -1612,6 +1612,8 @@ watchdog_check() {
 				{
 					echo "----------------------------------------------------------------"
 					echo "[$WATCHDOG_TIME] Unknown server failure:"
+          echo "CONTAINERS:"
+          docker stats --no-stream
 					echo "HTTP DUMP:"
 					echo "$html"
 				} >>"$WATCHDOG_FAILURES_FILE"

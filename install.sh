@@ -43,7 +43,7 @@ TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
 SCRIPT_VERSION="1.8.1"         #auto-update
-SCRIPT_BUILD_TIME="2024.01.17" #auto-update
+SCRIPT_BUILD_TIME="2024.01.18" #auto-update
 
 #=======================================
 # SETUP
@@ -1628,6 +1628,8 @@ watchdog_check() {
 				{
 					echo "----------------------------------------------------------------"
 					echo "[$WATCHDOG_TIME] Unknown server failure:"
+          echo "CONTAINERS:"
+          docker stats --no-stream
 					echo "HTTP DUMP:"
 					echo "$html"
 				} >>"$WATCHDOG_FAILURES_FILE"

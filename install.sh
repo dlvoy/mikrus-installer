@@ -43,7 +43,7 @@ TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
 SCRIPT_VERSION="1.8.1"         #auto-update
-SCRIPT_BUILD_TIME="2024.01.18" #auto-update
+SCRIPT_BUILD_TIME="2024.01.20" #auto-update
 
 #=======================================
 # SETUP
@@ -1600,7 +1600,7 @@ watchdog_check() {
 
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
-			local html=$(curl -Lksi "$domain")
+			local html=$(curl -iLsk "$domain")
 
 			WATCHDOG_STATUS="detection_failed"
 

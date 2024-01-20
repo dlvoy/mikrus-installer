@@ -1584,7 +1584,7 @@ watchdog_check() {
 
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
-			local html=$(curl -Lksi "$domain")
+			local html=$(curl -iLsk "$domain")
 
 			WATCHDOG_STATUS="detection_failed"
 

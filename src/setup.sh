@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.8.1
+### version: 1.9.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -36,6 +36,7 @@ check_jq
 check_ufw
 check_nano
 check_dateutils
+check_diceware
 setup_packages
 setup_node
 check_dotenv
@@ -43,6 +44,7 @@ setup_users
 setup_dir_structure
 download_conf
 download_tools
+setup_security
 
 update_if_needed
 setup_firewall

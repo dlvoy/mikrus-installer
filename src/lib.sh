@@ -12,6 +12,7 @@ CONFIG_ROOT_DIR=/srv/nightscout/config
 ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
+LOG_ENCRYPTION_KEY_FILE=/srv/nightscout/config/log.key
 DOCKER_COMPOSE_FILE=/srv/nightscout/config/docker-compose.yml
 PROFANITY_DB_FILE=/srv/nightscout/data/profanity.db
 RESERVED_DB_FILE=/srv/nightscout/data/reserved.db
@@ -20,14 +21,15 @@ WATCHDOG_TIME_FILE=/srv/nightscout/data/watchdog_time
 WATCHDOG_LOG_FILE=/srv/nightscout/data/watchdog.log
 WATCHDOG_FAILURES_FILE=/srv/nightscout/data/watchdog-failures.log
 WATCHDOG_CRON_LOG=/srv/nightscout/data/watchdog-cron.log
+SUPPORT_LOG=/srv/nightscout/data/support.log
 UPDATE_CHANNEL_FILE=/srv/nightscout/data/update_channel
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
-SCRIPT_VERSION="1.8.0"         #auto-update
-SCRIPT_BUILD_TIME="2024.01.07" #auto-update
+SCRIPT_VERSION="1.9.0"         #auto-update
+SCRIPT_BUILD_TIME="2024.10.06" #auto-update
 
 #=======================================
 # SETUP
@@ -110,6 +112,9 @@ tty_red="$(tty_mkbold 31)"
 tty_bold="$(tty_mkbold 39)"
 tty_reset="$(tty_escape 0)"
 
+NL="\n"
+TL="\n\n"
+
 #=======================================
 # EMOJIS
 #=======================================
@@ -138,6 +143,7 @@ uni_confirm_upd=" $(printf '\U1F199') Aktualizuj "
 uni_confirm_ed=" $(printf '\U1F4DD') Edytuj "
 uni_install=" $(printf '\U1F680') Instaluj "
 uni_resign=" $(printf '\U1F6AB') Rezygnuję "
+uni_send=" $(printf '\U1F4E7') Wyślij "
 
 uni_ns_ok="$(printf '\U1F7E2') działa"
 uni_watchdog_ok="$(printf '\U1F415') Nightscout działa"
@@ -280,6 +286,13 @@ center_text() {
 	echo "${spaces:0:$((($2 - len) / 2))}$1"
 }
 
+rpad_text() {
+	local inText="$1"
+	local len=${#inText}
+	local spaces="                                                                                     "
+	echo "$1${spaces:0:$(($2 - len))}"
+}
+
 multiline_length() {
 	local string=$1
 	local maxLen=0
@@ -298,13 +311,16 @@ multiline_length() {
 
 center_multiline() {
 	local maxLen=70
+	local string="$*"
+
 	if [ $# -gt 1 ]; then
-		maxLen=$2
+		maxLen=$1
+		shift 1
+		string="$*"
 	else
-		maxLen=$(multiline_length "$1")
+		maxLen=$(multiline_length "$string")
 	fi
 
-	local string=$1
 	# shellcheck disable=SC2059
 	readarray -t array <<<"$(printf "$string")"
 	for i in "${!array[@]}"; do
@@ -314,18 +330,77 @@ center_multiline() {
 	done
 }
 
+pad_multiline() {
+	local string="$*"
+	local maxLen=$(multiline_length "$string")
+
+	# shellcheck disable=SC2059
+	readarray -t array <<<"$(printf "$string")"
+	for i in "${!array[@]}"; do
+		local line=${array[i]}
+		# shellcheck disable=SC2005
+		echo "$(rpad_text "$line" "$maxLen")"
+	done
+}
+
 okdlg() {
-	local msg=$2
-	local lcount=$(echo -e "$2" | grep -c '^')
+	local title=$1
+	shift 1
+	local msg="$*"
+	local lcount=$(echo -e "$msg" | grep -c '^')
 	local width=$(multiline_length "$msg")
-	whiptail --title "$1" --msgbox "$(center_multiline "$msg" $((width + 4)))" $((lcount + 6)) $((width + 9))
+	whiptail --title "$title" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
 }
 
 confirmdlg() {
-	local msg=$2
-	local lcount=$(echo -e "$2" | grep -c '^')
+	local title=$1
+	local btnlabel=$2
+	shift 2
+	local msg="$*"
+	local lcount=$(echo -e "$msg" | grep -c '^')
 	local width=$(multiline_length "$msg")
-	whiptail --title "$1" --ok-button "$3" --msgbox "$(center_multiline "$msg" $((width + 4)))" $((lcount + 6)) $((width + 9))
+	whiptail --title "$title" --ok-button "$btnlabel" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
+}
+
+yesnodlg() {
+	yesnodlg_base "y" "$@"
+}
+
+noyesdlg() {
+	yesnodlg_base "n" "$@"
+}
+
+yesnodlg_base() {
+	local defaultbtn=$1
+	local title=$2
+	local ybtn=$3
+	local nbtn=$4
+	shift 4
+	local msg="$*"
+	# shellcheck disable=SC2059
+	local linec=$(printf "$msg" | grep -c '^')
+	local width=$(multiline_length "$msg")
+	local ylen=${#ybtn}
+	local nlen=${#nbtn}
+	# we need space for all < > around buttons
+	local minbtn=$((ylen + nlen + 6))
+	# minimal nice width of dialog
+	local minlen=$((minbtn > 15 ? minbtn : 15))
+	local mwidth=$((minlen > width ? minlen : width))
+
+	# whiptail has bug, buttons are NOT centered
+	local rpad=$((width < minbtn ? (nlen - 2) + ((nlen - 2) / 2) : 4))
+	local padw=$((mwidth + rpad))
+
+	if [[ "$defaultbtn" == "y" ]]; then
+		whiptail --title "$title" --yesno "$(center_multiline $padw "$msg")" \
+			--yes-button "$ybtn" --no-button "$nbtn" \
+			$((linec + 7)) $((padw + 4))
+	else
+		whiptail --title "$title" --yesno --defaultno "$(center_multiline $padw "$msg")" \
+			--yes-button "$ybtn" --no-button "$nbtn" \
+			$((linec + 7)) $((padw + 4))
+	fi
 }
 
 #=======================================
@@ -336,6 +411,7 @@ packages=()
 aptGetWasUpdated=0
 freshInstall=0
 cachedMenuDomain=''
+lastTimeSpaceInfo=0
 
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
@@ -430,10 +506,28 @@ check_dateutils() {
 	add_if_not_ok "Date Utils" "dateutils"
 }
 
+check_diceware() {
+	diceware --version >/dev/null 2>&1
+	add_if_not_ok "Secure Password Generator" "diceware"
+}
+
+setup_security() {
+	if [[ -f $LOG_ENCRYPTION_KEY_FILE ]]; then
+		msgok "Found log encryption key"
+	else
+		ohai "Generating log encryption file..."
+		diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+		msgcheck "Key generated"
+	fi
+}
+
 setup_packages() {
 	# shellcheck disable=SC2145
 	# shellcheck disable=SC2068
-	(ifIsSet packages && setup_update_repo && ohai "Installing packages: ${packages[@]}" && apt-get -yq install ${packages[@]} >>$LOGTO 2>&1 && msgcheck "Install successfull") || msgok "All required packages already installed"
+	(ifIsSet packages && setup_update_repo &&
+		ohai "Installing packages: ${packages[@]}" &&
+		apt-get -yq install ${packages[@]} >>$LOGTO 2>&1 &&
+		msgcheck "Install successfull") || msgok "All required packages already installed"
 }
 
 setup_node() {
@@ -562,6 +656,10 @@ get_docker_status() {
 	else
 		echo 'missing'
 	fi
+}
+
+get_space_info() {
+	df -B1 --output=target,size,avail,pcent | tail -n +2 | awk '$1 ~ /^\/$/'
 }
 
 install_containers() {
@@ -756,23 +854,42 @@ update_if_needed() {
 }
 
 about_dialog() {
+	LOG_KEY=$(<$LOG_ENCRYPTION_KEY_FILE)
 	okdlg "O tym narzędziu..." \
-		"$(printf '\U1F9D1') (c) 2023 Dominik Dzienia\n$(printf '\U1F4E7') dominik.dzienia@gmail.com\n\n$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji CC BY-NC-ND 4.0\nhttps://creativecommons.org/licenses/by-nc-nd/4.0/deed.pl\n\nwersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
+		"$(printf '\U1F9D1') (c) 2023 Dominik Dzienia" \
+		"${NL}$(printf '\U1F4E7') dominik.dzienia@gmail.com" \
+		"${TL}$(printf '\U1F3DB')  To narzędzie jest dystrybuowane na licencji CC BY-NC-ND 4.0" \
+		"${NL}htps://creativecommons.org/licenses/by-nc-nd/4.0/deed.pl" \
+		"${TL}wersja: $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL" \
+		"${TL}hasło do logów: $LOG_KEY"
 }
 
 prompt_welcome() {
-	whiptail --title "Witamy" --yesno "$(center_multiline "Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us\n\nJeśli na tym serwerze jest już Nightscout \n- ten skrypt umożliwia jego aktualizację oraz diagnostykę." 65)" --yes-button "$uni_start" --no-button "$uni_exit" 12 70
+	yesnodlg "Witamy" "$uni_start" "$uni_exit" \
+		"Ten skrypt zainstaluje Nightscout na bieżącym serwerze mikr.us" \
+		"${TL}Jeśli na tym serwerze jest już Nightscout " \
+		"${NL}- ten skrypt umożliwia jego aktualizację oraz diagnostykę.${TL}"
 	exit_on_no_cancel
 }
-
 prompt_disclaimer() {
 	confirmdlg "Ostrzeżenie!" \
-		"Te narzędzie pozwala TOBIE zainstalować WŁASNĄ instancję Nightscout.\nTy odpowiadasz za ten serwer i ewentualne skutki jego używania.\nTy nim zarządzasz, to nie jest usługa czy produkt.\nTo rozwiązanie \"Zrób to sam\" - SAM za nie odpowiadasz!\n\nAutorzy skryptu nie ponoszą odpowiedzialności za skutki jego użycia!\nNie dajemy żadnych gwarancji co do jego poprawności czy dostępności!\nUżywasz go na własną odpowiedzialność!\nNie opieraj decyzji terapeutycznych na podstawie wskazań tego narzędzia!\n\nTwórcy tego narzędzia NIE SĄ administratorami Mikr.us-ów ani Hetznera!\nW razie problemów z dostępnością serwera najpierw sprawdź status Mikr.us-a!" \
-		"Zrozumiano!"
+		"Zrozumiano!" \
+		"Te narzędzie pozwala TOBIE zainstalować WŁASNĄ instancję Nightscout." \
+		"${NL}Ty odpowiadasz za ten serwer i ewentualne skutki jego używania." \
+		"${NL}Ty nim zarządzasz, to nie jest usługa czy produkt." \
+		"${NL}To rozwiązanie \"Zrób to sam\" - SAM za nie odpowiadasz!" \
+		"${TL}Autorzy skryptu nie ponoszą odpowiedzialności za skutki jego użycia!" \
+		"${NL}Nie dajemy żadnych gwarancji co do jego poprawności czy dostępności!" \
+		"${NL}Używasz go na własną odpowiedzialność!" \
+		"${NL}Nie opieraj decyzji terapeutycznych na podstawie wskazań tego narzędzia!" \
+		"${TL}Twórcy tego narzędzia NIE SĄ administratorami Mikr.us-ów ani Hetznera!" \
+		"${NL}W razie problemów z dostępnością serwera najpierw sprawdź status Mikr.us-a!"
 }
 
 instal_now_prompt() {
-	whiptail --title "Instalować Nightscout?" --yesno "$(center_multiline "Wykryto konfigurację ale brak uruchomionych usług\nCzy chcesz zainstalować teraz kontenery Nightscout?" 65)" --yes-button "$uni_install" --no-button "$uni_noenter" 9 70
+	yesnodlg "Instalować Nightscout?" "$uni_install" "$uni_noenter" \
+		"Wykryto konfigurację ale brak uruchomionych usług" \
+		"${NL}Czy chcesz zainstalować teraz kontenery Nightscout?"
 }
 
 prompt_mikrus_host() {
@@ -931,10 +1048,11 @@ domain_setup() {
 	local domain=$(get_td_domain)
 	local domainLen=${#domain}
 	if ((domainLen > 15)); then
-
 		msgcheck "Subdomena jest już skonfigurowana ($domain)"
 		okdlg "Subdomena już ustawiona" \
-			"Wykryto poprzednio skonfigurowaną subdomenę:\n\n$domain\n\nStrona Nightscout powinna być widoczna z internetu."
+			"Wykryto poprzednio skonfigurowaną subdomenę:" \
+			"${TL}$domain" \
+			"${TL}Strona Nightscout powinna być widoczna z internetu."
 		return
 	fi
 
@@ -954,14 +1072,20 @@ domain_setup() {
 
 				if printf "%s" "$SUBDOMAIN" | grep -f "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
 					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
-						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta, zarezerwowana lub niedopuszczalna.\n\nWymyśl coś innego"
+						"Podana wartość:" \
+						"${NL}$SUBDOMAIN" \
+						"${TL}jest zajęta, zarezerwowana lub niedopuszczalna." \
+						"${TL}Wymyśl coś innego"
 					SUBDOMAIN=''
 					continue
 				fi
 
 				if printf "%s" "$SUBDOMAIN" | grep -xf "$RESERVED_DB_FILE" >>$LOGTO 2>&1; then
 					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
-						"Podana wartość:\n$SUBDOMAIN\n\njest zajęta lub zarezerwowana.\n\nWymyśl coś innego"
+						"Podana wartość:" \
+						"${NL}$SUBDOMAIN" \
+						"${TL}jest zajęta lub zarezerwowana." \
+						"${TL}Wymyśl coś innego"
 					SUBDOMAIN=''
 					continue
 				fi
@@ -970,7 +1094,9 @@ domain_setup() {
 
 			else
 				okdlg "$uni_excl Nieprawidłowy początek subdomeny $uni_excl" \
-					"Podany początek subdomeny:\n$SUBDOMAIN\n\nma nieprawidłowy format. Wymyśl coś innego"
+					"Podany początek subdomeny:" \
+					"${NL}$SUBDOMAIN" \
+					"${TL}ma nieprawidłowy format. Wymyśl coś innego"
 				if [ $? -eq 1 ]; then
 					SUBDOMAIN=''
 					continue
@@ -1011,7 +1137,12 @@ domain_setup() {
 }
 
 admin_panel_promo() {
-	whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "$(center_multiline "Ta instalacja Nightscout dodaje dodatkowy panel administracyjny\ndo zarządzania serwerem i konfiguracją - online.\n\nZnajdziesz go klikając na ikonkę serwera w menu strony Nightscout\nlub dodając /mikrus na końcu swojego adresu Nightscout" 70)" 12 75
+	whiptail --title "Panel zarządzania Mikr.us-em" --msgbox "$(center_multiline 70 \
+		"Ta instalacja Nightscout dodaje dodatkowy panel administracyjny" \
+		"${NL}do zarządzania serwerem i konfiguracją - online." \
+		"${TL}Znajdziesz go klikając na ikonkę serwera w menu strony Nightscout" \
+		"${NL}lub dodając /mikrus na końcu swojego adresu Nightscout")" \
+		12 75
 }
 
 get_watchdog_age_string() {
@@ -1225,7 +1356,7 @@ get_container_status_code() {
 
 show_logs() {
 	local col=$((COLUMNS - 10))
-	local rws=$((LINES - 3))
+	local rws=$((LINES - 4))
 	if [ $col -gt 120 ]; then
 		col=160
 	fi
@@ -1333,12 +1464,156 @@ version_menu() {
 				ohai "Changing Nightscout container tag from: $ns_tag to: $CHOICE"
 				dotenv-tool -pmr -i $ENV_FILE_DEP -- "NS_NIGHTSCOUT_TAG=$CHOICE"
 				docker_compose_update
-				whiptail --title "Zmieniono wersję Nightscout" --msgbox "$(center_multiline "Zmieniono wersję Nightscout na: $CHOICE\n\nSprawdź czy Nightscout działa poprawnie, w razie problemów:\n${uni_bullet}aktualizuj kontenery\n${uni_bullet}spróbuj wyczyścić bazę danych\n${uni_bullet}wróć do poprzedniej wersji ($ns_tag)" 65)" 13 70
+				whiptail --title "Zmieniono wersję Nightscout" --msgbox "$(center_multiline 65 \
+					"Zmieniono wersję Nightscout na: $CHOICE" \
+					"${TL}Sprawdź czy Nightscout działa poprawnie, w razie problemów:" \
+					"${NL}${uni_bullet}aktualizuj kontenery" \
+					"${NL}${uni_bullet}spróbuj wyczyścić bazę danych" \
+					"${NL}${uni_bullet}wróć do poprzedniej wersji ($ns_tag)")" \
+					13 70
 				break
 			fi
 
 		fi
 
+	done
+}
+
+do_cleanup_sys() {
+	ohai "Sprzątanie dziennik systemowego..."
+	journalctl --vacuum-size=50M >>$LOGTO 2>&1
+	ohai "Czyszczenie systemu apt..."
+	apt autoremove >>$LOGTO 2>&1
+}
+
+do_cleanup_docker() {
+	ohai "Usuwanie nieużywanych obrazów Dockera..."
+	docker image prune -af >>$LOGTO 2>&1
+}
+
+do_cleanup_db() {
+	ohai "Usuwanie kopii zapasowych bazy danych..."
+	rm -f "/srv/nightscout/data/dbbackup/*" >>$LOGTO 2>&1
+}
+
+cleanup_menu() {
+
+	while :; do
+
+		local spaceInfo=$(get_space_info)
+		local remainingTxt=$(echo "$spaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
+		local totalTxt=$(echo "$spaceInfo" | awk '{print $2}' | numfmt --to iec-i --suffix=B)
+		local percTxt=$(echo "$spaceInfo" | awk '{print $4}')
+		local fixedPerc=${percTxt/[%]/=}
+
+		local nowB=$(echo "$spaceInfo" | awk '{print $3}')
+		local lastTimeB=$(echo "$lastTimeSpaceInfo" | awk '{print $3}')
+		local savedB=$((nowB - lastTimeB))
+		local savedTxt=$(echo "$savedB" | numfmt --to iec-i --suffix=B)
+
+    if (( savedB < 1)); then
+			savedTxt="---"
+		fi
+
+		local statusTitle="\n$(center_multiline 45 "$(
+			pad_multiline \
+				"  Dostępne: ${remainingTxt}" \
+				"\n Zwolniono: ${savedTxt}" \
+				"\n    Zajęte: ${fixedPerc} (z ${totalTxt})"
+		)")\n"
+
+		local CHOICE=$(whiptail --title "Sprzątanie" --menu \
+			"${statusTitle/=/%}" \
+			16 50 5 \
+			"A)" "Posprzątaj wszystko" \
+			"S)" "Posprzątaj zasoby systemowe" \
+			"D)" "Usuń nieużywane obrazy Dockera" \
+			"B)" "Usuń kopie zapasowe bazy danych" \
+			"M)" "Powrót do menu" \
+			--ok-button="Wybierz" --cancel-button="$uni_back" \
+			3>&2 2>&1 1>&3)
+
+		case $CHOICE in
+		"A)")
+			noyesdlg "Posprzątać wszystko?" "$uni_confirm_del" "$uni_resign" \
+				"Czy chcesz posprzątać i usunąć:" \
+				"$(
+					pad_multiline \
+						"${NL}${uni_bullet}nieużywane pliki apt i dziennika" \
+						"${NL}${uni_bullet}nieużywane obrazy Dockera" \
+						"${NL}${uni_bullet}kopie zapasowe bazy danych"
+				)"
+			if ! [ $? -eq 1 ]; then
+				do_cleanup_sys
+				do_cleanup_docker
+				do_cleanup_db
+			fi
+			;;
+		"S)")
+			noyesdlg "Posprzątać zasoby systemowe?" "$uni_confirm_del" "$uni_resign" \
+				"Czy chcesz usunąć nieużywane pakiety apt i poprzątać dziennik systemowy?"
+			if ! [ $? -eq 1 ]; then
+				do_cleanup_sys
+			fi
+			;;
+		"D)")
+			noyesdlg "Posprzątać obrazy Dockera?" "$uni_confirm_del" "$uni_resign" \
+				"Czy chcesz usunąć nieużywane obrazy Dockera?"
+			if ! [ $? -eq 1 ]; then
+				do_cleanup_docker
+			fi
+			;;
+		"B)")
+			noyesdlg "Usunąć kopie zapasowe bazy danych?" "$uni_confirm_del" "$uni_resign" \
+				"Czy chcesz usunąć kopie zapasowe bazy danych?" \
+				"${NL}(na razie i tak nie ma automatycznego mechanizmu ich wykorzystania)"
+			if ! [ $? -eq 1 ]; then
+				do_cleanup_db
+			fi
+			;;
+		"M)")
+			break
+			;;
+		"")
+			break
+			;;
+		esac
+	done
+}
+
+update_menu() {
+	while :; do
+		local CHOICE=$(whiptail --title "Aktualizuj" --menu "\n" 11 40 4 \
+			"S)" "Aktualizuj system" \
+			"N)" "Aktualizuj to narzędzie" \
+			"K)" "Aktualizuj kontenery" \
+			"M)" "Powrót do menu" \
+			--ok-button="$uni_select" --cancel-button="$uni_back" \
+			3>&2 2>&1 1>&3)
+
+		case $CHOICE in
+		"S)")
+			ohai "Updating package list"
+			dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33
+			apt-get -yq update >>$LOGTO 2>&1
+			ohai "Upgrading system"
+			dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33
+			apt-get -yq upgrade >>$LOGTO 2>&1
+			;;
+		"N)")
+			update_if_needed "Wszystkie pliki narzędzia są aktualne"
+			;;
+		"K)")
+			docker_compose_down
+			docker_compose_update
+			;;
+		"M)")
+			break
+			;;
+		"")
+			break
+			;;
+		esac
 	done
 }
 
@@ -1370,7 +1645,8 @@ uninstall_menu() {
 
 			if ! [[ "$0" =~ .*"/usr/bin/nightscout-tool" ]]; then
 				okdlg "Opcja niedostępna" \
-					"Edytor ustawień dostępny po uruchomieniu narzędzia komendą:\n\nnightscout-tool"
+					"Edytor ustawień dostępny po uruchomieniu narzędzia komendą:" \
+					"${TL}nightscout-tool"
 			else
 				whiptail --title "Edycja ustawień Nightscout" --yesno "Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO\n\nWskazówki co do obsługi edytora:\n${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O\n${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X\n\n $(printf "\U26A0") Edycja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")" --yes-button "$uni_confirm_ed" --no-button "$uni_resign" 15 68
 				if ! [ $? -eq 1 ]; then
@@ -1403,7 +1679,11 @@ uninstall_menu() {
 				rm -r "${MONGO_DB_DIR:?}/data"
 				dialog --title " Czyszczenie konfiguracji" --infobox "\n    Usuwanie konfiguracji\n   ... Proszę czekać ..." 6 32
 				rm -r "${CONFIG_ROOT_DIR:?}"
-				whiptail --title "Usunięto dane użytkownika" --msgbox "$(center_multiline "Usunęto dane użytkwnika i konfigurację.\n\nAby zainstalować Nightscout od zera:\nuruchom ponownie skrypt i podaj konfigurację" 65)" 11 70
+				whiptail --title "Usunięto dane użytkownika" --msgbox "$(center_multiline 65 \
+					"Usunęto dane użytkwnika i konfigurację." \
+					"${TL}Aby zainstalować Nightscout od zera:" \
+					"${NL}uruchom ponownie skrypt i podaj konfigurację")" \
+					11 70
 				exit 0
 			fi
 			;;
@@ -1418,7 +1698,12 @@ uninstall_menu() {
 				rm "$TOOL_LINK"
 				rm -r "${NIGHTSCOUT_ROOT_DIR:?}/tools"
 				rm -r "${NIGHTSCOUT_ROOT_DIR:?}/updates"
-				whiptail --title "Odinstalowano" --msgbox "$(center_multiline "Odinstalowano Nightscout z Mikr.us-a\n\nAby ponownie zainstalować, postępuj według instrukcji na stronie:\nhttps://t1d.dzienia.pl/mikrus\n\nDziękujemy i do zobaczenia!" 65)" 13 70
+				whiptail --title "Odinstalowano" --msgbox "$(center_multiline 65 \
+					"Odinstalowano Nightscout z Mikr.us-a" \
+					"${TL}Aby ponownie zainstalować, postępuj według instrukcji na stronie:" \
+					"${NL}https://t1d.dzienia.pl/mikrus" \
+					"${TL}Dziękujemy i do zobaczenia!")" \
+					13 70
 				exit 0
 			fi
 			;;
@@ -1448,52 +1733,180 @@ get_domain_status() {
 	fi
 }
 
+send_diagnostics() {
+	LOG_KEY=$(<$LOG_ENCRYPTION_KEY_FILE)
+
+	yesnodlg "Wysyłać diagnostykę?" \
+		"$uni_send" "$uni_resign" \
+		"Czy chcesz zgromadzić i wysłać sobie mailem dane diagnostyczne?" \
+		"\n$(
+			pad_multiline \
+				"\n${uni_bullet}diagnostyka zawiera logi i informacje o serwerze i usługach" \
+				"\n${uni_bullet}wysyłka na e-mail na który zamówiono serwer Mikr.us" \
+				"\n${uni_bullet}dane będą skompresowane i zaszyfrowane" \
+				"\n${uni_bullet}maila prześlij dalej do zaufanej osoby wspierającej" \
+				"\n${uni_bullet_pad}(z którą to wcześniej zaplanowano i uzgodniono!!!)" \
+				"\n${uni_bullet}hasło przekaż INNĄ DROGĄ (komunikatorem, SMSem, osobiście)" \
+				"\n\n${uni_bullet_pad}Hasło do logów: $LOG_KEY"
+		)"
+
+	if ! [ $? -eq 1 ]; then
+
+		ohai "Zbieranie diagnostyki"
+
+		local domain=$(get_td_domain)
+		local curr_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+		local mikrus_h=$(hostname)
+
+		local LOG_DIVIDER="======================================================="
+
+		rm -f $SUPPORT_LOG
+		rm -f "$SUPPORT_LOG.gz"
+		rm -f "$SUPPORT_LOG.gz.asc"
+
+		{
+			echo "Dane diagnostyczne zebrane $curr_time"
+			echo "    serwer : $mikrus_h"
+			echo "    domena : $domain"
+			echo " wersja NS : $ns_tag"
+		} >$SUPPORT_LOG
+
+		ohai "Zbieranie statusu usług"
+
+		{
+			echo "$LOG_DIVIDER"
+			echo " Statusy usług"
+			echo "$LOG_DIVIDER"
+			echo "   Nightscout:  $(get_container_status 'ns-server')"
+			echo "  Baza danych:  $(get_container_status 'ns-database')"
+			echo "       Backup:  $(get_container_status 'ns-backup')"
+			echo "     Watchdog:  $(get_watchdog_status "$(get_watchdog_status_code)" "$uni_watchdog_ok")"
+		} >>$SUPPORT_LOG
+
+		ohai "Zbieranie informacji o zasobach"
+		local spaceInfo=$(get_space_info)
+		local remainingTxt=$(echo "$spaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
+		local totalTxt=$(echo "$spaceInfo" | awk '{print $2}' | numfmt --to iec-i --suffix=B)
+		local percTxt=$(echo "$spaceInfo" | awk '{print $4}')
+
+		{
+			echo "$LOG_DIVIDER"
+			echo " Miejsce na dysku"
+			echo "$LOG_DIVIDER"
+			echo "  Dostępne: ${remainingTxt}"
+			echo "    Zajęte: ${percTxt} (z ${totalTxt})"
+		} >>$SUPPORT_LOG
+
+		ohai "Zbieranie logów watchdoga"
+
+		if [[ -f $WATCHDOG_LOG_FILE ]]; then
+			{
+				echo "$LOG_DIVIDER"
+				echo " Watchdog log"
+				echo "$LOG_DIVIDER"
+				timeout -k 15 10 cat $WATCHDOG_LOG_FILE
+			} >>$SUPPORT_LOG
+		fi
+
+		if [[ -f $WATCHDOG_FAILURES_FILE ]]; then
+			{
+				echo "$LOG_DIVIDER"
+				echo " Watchdog failures log"
+				echo "$LOG_DIVIDER"
+				timeout -k 15 10 cat $WATCHDOG_FAILURES_FILE
+			} >>$SUPPORT_LOG
+		fi
+
+		ohai "Zbieranie logów usług"
+
+		{
+			echo "$LOG_DIVIDER"
+			echo " Nightscout log"
+			echo "$LOG_DIVIDER"
+			timeout -k 15 10 docker logs ns-server --tail 500 >>$SUPPORT_LOG 2>&1
+			echo "$LOG_DIVIDER"
+			echo " MongoDB database log"
+			echo "$LOG_DIVIDER"
+			timeout -k 15 10 docker logs ns-database --tail 100 >>$SUPPORT_LOG 2>&1
+		} >>$SUPPORT_LOG
+
+		ohai "Kompresowanie i szyfrowanie raportu"
+
+		gzip $SUPPORT_LOG
+
+		local logkey=$(<$LOG_ENCRYPTION_KEY_FILE)
+
+		gpg --passphrase "$logkey" --batch --quiet --yes -a -c "$SUPPORT_LOG.gz"
+
+		ohai "Wysyłanie maila"
+
+		{
+			echo "Ta wiadomość zawiera poufne dane diagnostyczne Twojego serwera Nightscout."
+			echo "Mogą one pomóc Tobie lub zaufanej osobie w identyfikacji problemu."
+			echo " "
+			echo "Prześlij ten mail dalej do zaufanej osoby, umówionej na udzielenie wsparcia."
+			echo "Przekaż tej osobie w bezpieczny sposób hasło szyfrowania"
+			echo "  (w narzędziu nightscout-tool można je znaleźć w pozycji 'O tym narzędziu...')."
+			echo "Do przekazania hasła użyj INNEJ metody (komunikator, SMS, osobiście...)."
+			echo "Nie przesyłaj tej wiadomości do administratorów grupy lub serwera bez wcześniejszego uzgodnienia!"
+			echo " "
+			echo "Instrukcje i narzędzie do odszyfrowania logów dostępne pod adresem: https://t1d.dzienia.pl/decoder/"
+			echo " "
+			echo " "
+			cat "$SUPPORT_LOG.gz.asc"
+		} | pusher "Diagnostyka_serwera_Nightscout_-_$curr_time"
+
+		okdlg "Diagnostyka wysłana" \
+			"Sprawdź swoją skrzynkę pocztową,\n" \
+			"otrzymanego maila przekaż zaufanemu wspierającemu.\n\n" \
+			"Komunikatorem lub SMS przekaż hasło do logów:\n\n$LOG_KEY"
+
+	fi
+}
+
 main_menu() {
 	while :; do
 		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
 		local quickStatus=$(center_text "Strona Nightscout: $(get_watchdog_status "$(get_watchdog_status_code_live)" "$uni_ns_ok")" 55)
 		local quickVersion=$(center_text "Wersja: $ns_tag" 55)
 		local quickDomain=$(center_text "Domena: $(get_domain_status 'ns-server')" 55)
-		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 20 60 9 \
-			"1)" "Status kontenerów i logi" \
-			"2)" "Pokaż port i API SECRET" \
-			"S)" "Aktualizuj system" \
-			"N)" "Aktualizuj to narzędzie" \
-			"K)" "Aktualizuj kontenery" \
+		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 19 60 9 \
+			"S)" "Status kontenerów i logi" \
+			"P)" "Pokaż port i API SECRET" \
+			"U)" "Aktualizuj..." \
+			"C)" "Sprztąj..." \
 			"R)" "Uruchom ponownie kontenery" \
-			"Z)" "Zmień lub odinstaluj" \
+			"D)" "Wyślij diagnostykę i logi" \
+			"Z)" "Zmień lub odinstaluj..." \
 			"I)" "O tym narzędziu..." \
 			"X)" "Wyjście" \
 			--ok-button="$uni_select" --cancel-button="$uni_exit" \
 			3>&2 2>&1 1>&3)
 
 		case $CHOICE in
-		"1)")
+		"S)")
 			status_menu
 			;;
-		"2)")
+		"P)")
 			local ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
 			local ns_api_secret=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
-			whiptail --title "Podgląd konfiguracji Nightscout" --msgbox "\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" 10 60
+			whiptail --title "Podgląd konfiguracji Nightscout" --msgbox \
+				"\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" \
+				10 60
 			;;
-		"S)")
-			ohai "Updating package list"
-			dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33
-			apt-get -yq update >>$LOGTO 2>&1
-			ohai "Upgrading system"
-			dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33
-			apt-get -yq upgrade >>$LOGTO 2>&1
+		"U)")
+			update_menu
 			;;
-		"N)")
-			update_if_needed "Wszystkie pliki narzędzia są aktualne"
-			;;
-		"K)")
-			docker_compose_down
-			docker_compose_update
+		"C)")
+			cleanup_menu
 			;;
 		"R)")
 			docker_compose_down
 			docker_compose_up
+			;;
+		"D)")
+			send_diagnostics
 			;;
 		"Z)")
 			uninstall_menu
@@ -1519,6 +1932,8 @@ setup_done() {
 
 install_or_menu() {
 	STATUS_NS=$(get_docker_status "ns-server")
+	lastTimeSpaceInfo=$(get_space_info)
+
 	if [ "$STATUS_NS" = "missing" ]; then
 
 		if [ "$freshInstall" -eq 0 ]; then
@@ -1612,8 +2027,8 @@ watchdog_check() {
 				{
 					echo "----------------------------------------------------------------"
 					echo "[$WATCHDOG_TIME] Unknown server failure:"
-          echo "CONTAINERS:"
-          docker stats --no-stream
+					echo "CONTAINERS:"
+					docker stats --no-stream
 					echo "HTTP DUMP:"
 					echo "$html"
 				} >>"$WATCHDOG_FAILURES_FILE"

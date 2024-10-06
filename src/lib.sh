@@ -518,23 +518,23 @@ check_diceware() {
 
 setup_provisional_key() {
 	ohai "Generating provisional log encryption key"
-  local randPass=$(openssl rand -base64 30)
-  local fixedPass=$(echo "$randPass" | sed -e 's/[+\/]/-/g')
-  echo "tymczasowe-${fixedPass}" >$LOG_ENCRYPTION_KEY_FILE
+	local randPass=$(openssl rand -base64 30)
+	local fixedPass=$(echo "$randPass" | sed -e 's/[+\/]/-/g')
+	echo "tymczasowe-${fixedPass}" >$LOG_ENCRYPTION_KEY_FILE
 	msgcheck "Provisional key generated"
 }
 
 setup_security() {
 	if [[ -f $LOG_ENCRYPTION_KEY_FILE ]]; then
-    # --------------------
-    # JAKIŚ klucz istnieje
-    # --------------------
+		# --------------------
+		# JAKIŚ klucz istnieje
+		# --------------------
 		local logKey=$(<$LOG_ENCRYPTION_KEY_FILE)
 		local regexTemp='tymczasowe-'
-    
-    # -----------------------
-    # ...ale jest tymczasowy
-    # -----------------------
+
+		# -----------------------
+		# ...ale jest tymczasowy
+		# -----------------------
 		if [[ "$logKey" =~ $regexTemp ]]; then
 			msgerr "Using provisional key"
 			test_diceware
@@ -544,15 +544,15 @@ setup_security() {
 				diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
 				msgcheck "Key generated"
 			else
-        msgerr "Required tool (diceware) still cannot be installed - apt is locked!"
-        msgnote "Zrestartuj serwer mikr.us i sprawdź czy ten błąd nadal występuje - wtedy odbokuj apt-get i zainstaluj diceware (apt-get install diceware)"
+				msgerr "Required tool (diceware) still cannot be installed - apt is locked!"
+				msgnote "Zrestartuj serwer mikr.us i sprawdź czy ten błąd nadal występuje - wtedy odbokuj apt-get i zainstaluj diceware (apt-get install diceware)"
 			fi
 		else
 			local keySize=${#logKey}
 
-      # ----------------------
-      # ...ale jest za krótki
-      # ----------------------
+			# ----------------------
+			# ...ale jest za krótki
+			# ----------------------
 			if ((keySize < 12)); then
 				msgerr "Encryption key empty or too short, generating better one"
 				test_diceware
@@ -570,10 +570,10 @@ setup_security() {
 			fi
 		fi
 	else
-    
-    # ---------------------
-    # jescze nie ma klucza
-    # ---------------------
+
+		# ---------------------
+		# jescze nie ma klucza
+		# ---------------------
 
 		test_diceware
 		local RESULT=$?
@@ -1294,9 +1294,9 @@ get_watchdog_status_code_live() {
 				status="crashed"
 			fi
 
-			regex3='MIKR.US - coś poszło nie tak'
+			regex3='coś poszło nie tak'
 			if [[ "$html" =~ $regex3 ]]; then
-				status="restarting"
+				status="awaiting"
 			fi
 
 		else
@@ -1305,7 +1305,7 @@ get_watchdog_status_code_live() {
 
 	else
 		if [ "$NS_STATUS" = "restarting" ] || [ "$DB_STATUS" = "restarting" ]; then
-			status="restarting"
+			status="awaiting"
 		else
 			status="not_running"
 		fi
@@ -1323,8 +1323,14 @@ get_watchdog_status() {
 	"restart")
 		printf "\U1F680 wymuszono restart NS"
 		;;
-	"restarting")
+	"awaiting")
 		printf "\U23F3 uruchamia się"
+		;;
+	"restart_failed")
+		printf "\U1F680 restart NS to za mało"
+		;;
+	"full_restart")
+		printf "\U1F680 restart NS i DB"
 		;;
 	"unknown")
 		printf "\U1F4A4 brak statusu"
@@ -1928,7 +1934,7 @@ retry_diagnostics() {
 
 send_diagnostics() {
 
-  setup_security
+	setup_security
 
 	LOG_KEY=$(<$LOG_ENCRYPTION_KEY_FILE)
 
@@ -2136,18 +2142,31 @@ watchdog_check() {
 			fi
 
 			if [[ "$html" =~ 'MongoDB connection failed' ]]; then
-				echo "Nightscout is crashed, restarting..."
+				echo "Nightscout crash detected"
 				WATCHDOG_STATUS="restart"
-				if [ "$WATCHDOG_LAST_STATUS" != "restart" ]; then
+				if [ "$WATCHDOG_LAST_STATUS" == "restart_failed" ]; then
+					echo "Restarting DB first..."
+					docker restart 'ns-database'
+					echo "Then, restarting Nightscout..."
 					docker restart 'ns-server'
 					echo "...done"
+					WATCHDOG_STATUS="full_restart"
+				else
+					if [ "$WATCHDOG_LAST_STATUS" != "restart" ]; then
+						echo "Restarting only Nightscout..."
+						docker restart 'ns-server'
+						echo "...done"
+					else
+						echo "Restart was tried but NS still crashed, will retry restart next time"
+						WATCHDOG_STATUS="restart_failed"
+					fi
 				fi
-			fi
-
-			regex3='MIKR.US - coś poszło nie tak'
-			if [[ "$html" =~ $regex3 ]]; then
-				echo "Nightscout is still restarting..."
-				WATCHDOG_STATUS="restarting"
+			else
+				regex3='coś poszło nie tak'
+				if [[ "$html" =~ $regex3 ]]; then
+					echo "Nightscout is still restarting..."
+					WATCHDOG_STATUS="awaiting"
+				fi
 			fi
 
 			if [ "$WATCHDOG_STATUS" = "detection_failed" ]; then
@@ -2167,7 +2186,7 @@ watchdog_check() {
 
 	else
 		if [ "$NS_STATUS" = "restarting" ] || [ "$DB_STATUS" = "restarting" ]; then
-			WATCHDOG_STATUS="restarting"
+			WATCHDOG_STATUS="awaiting"
 		else
 			WATCHDOG_STATUS="not_running"
 		fi

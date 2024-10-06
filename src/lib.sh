@@ -1542,12 +1542,11 @@ cleanup_menu() {
 		"A)")
 			noyesdlg "Posprzątać wszystko?" "$uni_confirm_del" "$uni_resign" \
 				"Czy chcesz posprzątać i usunąć:" \
-				"$(
-					pad_multiline \
+				"$(pad_multiline \
 						"${NL}${uni_bullet}nieużywane pliki apt i dziennika" \
 						"${NL}${uni_bullet}nieużywane obrazy Dockera" \
-						"${NL}${uni_bullet}kopie zapasowe bazy danych"
-				)":w
+						"${NL} ${uni_bullet}kopie zapasowe bazy danych")" \
+        "${TL}(ta operacja może potrwać od kilku do kilkudziesięciu minut)"
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_sys
 				do_cleanup_docker

@@ -523,18 +523,85 @@ check_dateutils() {
 	add_if_not_ok "Date Utils" "dateutils"
 }
 
-check_diceware() {
+test_diceware() {
 	diceware --version >/dev/null 2>&1
+}
+
+check_diceware() {
+	test_diceware
 	add_if_not_ok "Secure Password Generator" "diceware"
+}
+
+setup_provisional_key() {
+	ohai "Generating provisional log encryption key"
+  local randPass=$(openssl rand -base64 30)
+  local fixedPass=$(echo "$randPass" | sed -e 's/[+\/]/-/g')
+  echo "tymczasowe-${fixedPass}" >$LOG_ENCRYPTION_KEY_FILE
+	msgcheck "Provisional key generated"
 }
 
 setup_security() {
 	if [[ -f $LOG_ENCRYPTION_KEY_FILE ]]; then
-		msgok "Found log encryption key"
+    # --------------------
+    # JAKIŚ klucz istnieje
+    # --------------------
+		local logKey=$(<$LOG_ENCRYPTION_KEY_FILE)
+		local regexTemp='tymczasowe-'
+    
+    # -----------------------
+    # ...ale jest tymczasowy
+    # -----------------------
+		if [[ "$logKey" =~ $regexTemp ]]; then
+			msgerr "Using provisional key"
+			test_diceware
+			local RESULT=$?
+			if [ $RESULT -eq 0 ]; then
+				ohai "Generating proper log encryption file..."
+				diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+				msgcheck "Key generated"
+			else
+        msgerr "Required tool (diceware) still cannot be installed - apt is locked!"
+        msgnote "Zrestartuj serwer mikr.us i sprawdź czy ten błąd nadal występuje - wtedy odbokuj apt-get i zainstaluj diceware (apt-get install diceware)"
+			fi
+		else
+			local keySize=${#logKey}
+
+      # ----------------------
+      # ...ale jest za krótki
+      # ----------------------
+			if ((keySize < 12)); then
+				msgerr "Encryption key empty or too short, generating better one"
+				test_diceware
+				local RESULT=$?
+				if [ $RESULT -eq 0 ]; then
+					ohai "Generating proper log encryption file..."
+					diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+					msgcheck "Key generated"
+				else
+					msgerr "Generating provisional key while diceware tool is not installed"
+					setup_provisional_key
+				fi
+			else
+				msgok "Found log encryption key"
+			fi
+		fi
 	else
-		ohai "Generating log encryption file..."
-		diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
-		msgcheck "Key generated"
+    
+    # ---------------------
+    # jescze nie ma klucza
+    # ---------------------
+
+		test_diceware
+		local RESULT=$?
+		if [ $RESULT -eq 0 ]; then
+			ohai "Generating log encryption key..."
+			diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+			msgcheck "Key generated"
+		else
+			msgerr "Generating provisional key while diceware tool is not installed"
+			setup_provisional_key
+		fi
+
 	fi
 }
 
@@ -1781,7 +1848,7 @@ gather_diagnostics() {
 		echo "                 serwer : $mikrus_h"
 		echo "                 domena : $domain"
 		echo "      wersja nightscout : $ns_tag"
-    echo " wersja nightscout-tool : $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
+		echo " wersja nightscout-tool : $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
 	} >$SUPPORT_LOG
 
 	ohai "Zbieranie statusu usług"
@@ -1876,6 +1943,9 @@ retry_diagnostics() {
 }
 
 send_diagnostics() {
+
+  setup_security
+
 	LOG_KEY=$(<$LOG_ENCRYPTION_KEY_FILE)
 
 	yesnodlg "Wysyłać diagnostykę?" \
@@ -1900,6 +1970,7 @@ send_diagnostics() {
 		retry_diagnostics 200 50 "$curr_time"
 		retry_diagnostics 100 50 "$curr_time"
 		retry_diagnostics 50 50 "$curr_time"
+		retry_diagnostics 50 20 "$curr_time"
 
 		ohai "Wysyłanie maila"
 
@@ -1921,7 +1992,7 @@ send_diagnostics() {
 
 		local regexEm='Email sent'
 		if [[ "$sentStatus" =~ $regexEm ]]; then
-      msgok "Mail wysłany!"
+			msgcheck "Mail wysłany!"
 			okdlg "Diagnostyka wysłana" \
 				"Sprawdź swoją skrzynkę pocztową,\n" \
 				"otrzymanego maila przekaż zaufanemu wspierającemu.\n\n" \

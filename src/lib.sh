@@ -1762,9 +1762,10 @@ gather_diagnostics() {
 
 	{
 		echo "Dane diagnostyczne zebrane $curr_time"
-		echo "    serwer : $mikrus_h"
-		echo "    domena : $domain"
-		echo " wersja NS : $ns_tag"
+		echo "                 serwer : $mikrus_h"
+		echo "                 domena : $domain"
+		echo "      wersja nightscout : $ns_tag"
+    echo " wersja nightscout-tool : $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
 	} >$SUPPORT_LOG
 
 	ohai "Zbieranie statusu usług"
@@ -1904,6 +1905,7 @@ send_diagnostics() {
 
 		local regexEm='Email sent'
 		if [[ "$sentStatus" =~ $regexEm ]]; then
+      msgok "Mail wysłany!"
 			okdlg "Diagnostyka wysłana" \
 				"Sprawdź swoją skrzynkę pocztową,\n" \
 				"otrzymanego maila przekaż zaufanemu wspierającemu.\n\n" \

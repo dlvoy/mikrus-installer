@@ -1483,17 +1483,22 @@ do_cleanup_sys() {
 	ohai "Sprzątanie dziennik systemowego..."
 	journalctl --vacuum-size=50M >>$LOGTO 2>&1
 	ohai "Czyszczenie systemu apt..."
-	apt autoremove >>$LOGTO 2>&1
+  msgnote "Ta operacja może TROCHĘ potrwać (od kilku do kilkudziesięciu minut...)"
+  apt-get -y autoremove >>$LOGTO 2>&1 && apt-get -y clean >>$LOGTO 2>&1
+  msgcheck "Czyszczenie dziennika i apt zakończono"
 }
 
 do_cleanup_docker() {
 	ohai "Usuwanie nieużywanych obrazów Dockera..."
+  msgnote "Ta operacja może TROCHĘ potrwać (do kilku minut...)"
 	docker image prune -af >>$LOGTO 2>&1
+  msgcheck "Czyszczenie Dockera zakończono"
 }
 
 do_cleanup_db() {
 	ohai "Usuwanie kopii zapasowych bazy danych..."
-	rm -f "/srv/nightscout/data/dbbackup/*" >>$LOGTO 2>&1
+  find /srv/nightscout/data/dbbackup ! -type d -delete
+  msgcheck "Czyszczenie kopii zapasowych zakończono"
 }
 
 cleanup_menu() {
@@ -1542,7 +1547,7 @@ cleanup_menu() {
 						"${NL}${uni_bullet}nieużywane pliki apt i dziennika" \
 						"${NL}${uni_bullet}nieużywane obrazy Dockera" \
 						"${NL}${uni_bullet}kopie zapasowe bazy danych"
-				)"
+				)":w
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_sys
 				do_cleanup_docker
@@ -1551,14 +1556,16 @@ cleanup_menu() {
 			;;
 		"S)")
 			noyesdlg "Posprzątać zasoby systemowe?" "$uni_confirm_del" "$uni_resign" \
-				"Czy chcesz usunąć nieużywane pakiety apt i poprzątać dziennik systemowy?"
+				"Czy chcesz usunąć nieużywane pakiety apt i poprzątać dziennik systemowy?" \
+        "${TL}(ta operacja może potrwać od kilku do kilkudziesięciu minut)"
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_sys
 			fi
 			;;
 		"D)")
 			noyesdlg "Posprzątać obrazy Dockera?" "$uni_confirm_del" "$uni_resign" \
-				"Czy chcesz usunąć nieużywane obrazy Dockera?"
+				"Czy chcesz usunąć nieużywane obrazy Dockera?" \
+        "${TL}(ta operacja może potrwać kilka minut)"
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_docker
 			fi

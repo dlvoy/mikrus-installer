@@ -25,6 +25,7 @@ REQUIRED_NODE_VERSION=18.0.0
 LOGTO=/dev/null
 NIGHTSCOUT_ROOT_DIR=/srv/nightscout
 CONFIG_ROOT_DIR=/srv/nightscout/config
+DATA_ROOT_DIR=/srv/nightscout/data
 ENV_FILE_ADMIN=/srv/nightscout/config/admin.env
 ENV_FILE_NS=/srv/nightscout/config/nightscout.env
 ENV_FILE_DEP=/srv/nightscout/config/deployment.env
@@ -44,8 +45,12 @@ TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
+DISK_LOW_WARNING=838860800 # == 800 MiB
+DISK_LOW_MAIL=5184000 # == 60 days in seconds
+DISK_CRITICAL_WARNING=104857600 # == 100 MiB
+DISK_CRITICAL_MAIL=604800 # == 7 days in seconds
 SCRIPT_VERSION="1.9.0"         #auto-update
-SCRIPT_BUILD_TIME="2024.10.06" #auto-update
+SCRIPT_BUILD_TIME="2024.10.12" #auto-update
 
 #=======================================
 # SETUP
@@ -241,6 +246,31 @@ exit_on_no_cancel() {
 	if [ $? -eq 1 ]; then
 		exit 0
 	fi
+}
+
+get_since_last_time() {
+	local actionName=$1
+	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
+	if [ -f "$actionFile" ]; then
+		local actionLast="$(<"$actionFile")"
+		local nowDate="$(date +'%s')"
+		echo $((nowDate - actionLast))
+	else
+		echo -1
+	fi
+}
+
+set_last_time() {
+	local actionName=$1
+	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
+	local nowDate="$(date +'%s')"
+  echo "$nowDate" > "$actionFile"
+}
+
+clear_last_time() {
+	local actionName=$1
+	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
+  rm -f "$actionFile"
 }
 
 #=======================================
@@ -1310,7 +1340,7 @@ get_watchdog_status_code_live() {
 				status="crashed"
 			fi
 
-			regex3='coś poszło nie tak'
+			regex3='poszło nie tak'
 			if [[ "$html" =~ $regex3 ]]; then
 				status="awaiting"
 			fi
@@ -2020,7 +2050,7 @@ main_menu() {
 		local quickStatus=$(center_text "Strona Nightscout: $(get_watchdog_status "$(get_watchdog_status_code_live)" "$uni_ns_ok")" 55)
 		local quickVersion=$(center_text "Wersja: $ns_tag" 55)
 		local quickDomain=$(center_text "Domena: $(get_domain_status 'ns-server')" 55)
-		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 19 60 9 \
+		local CHOICE=$(whiptail --title "Zarządzanie Nightscoutem :: $SCRIPT_VERSION" --menu "\n$quickStatus\n$quickVersion\n$quickDomain\n" 21 60 9 \
 			"S)" "Status kontenerów i logi" \
 			"P)" "Pokaż port i API SECRET" \
 			"U)" "Aktualizuj..." \
@@ -2108,6 +2138,78 @@ install_or_menu() {
 	fi
 }
 
+free_space_check() {
+	lastTimeSpaceInfo=$(get_space_info)
+  
+	local remainingB=$(echo "$lastTimeSpaceInfo" | awk '{print $3}')
+	local remainingTxt=$(echo "$lastTimeSpaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
+
+  if ((remainingB < DISK_LOW_WARNING)); then
+    if ((remainingB < DISK_CRITICAL_WARNING)); then
+      local lastCalled=$(get_since_last_time "disk_critical")
+	    local domain=$(get_td_domain)
+      if ((lastCalled == -1)) || ((lastCalled > DISK_CRITICAL_MAIL)); then
+        set_last_time "disk_critical"
+        {
+          echo "Na twoim serwerze mikr.us z Nightscoutem (https://$domain) zostało krytycznie mało miejsca (${remainingTxt})!"
+          echo " "
+          echo "Tak mała ilość miejsca nie pozwala serwerowi na stabilne działanie!"
+          echo "🚨PILNIE🚨 posprzątaj na serwerze, aby to zrobić możesz:"
+          echo " "
+          echo "1. Usunąć stare statusy i wpisy z poziomu strony Nightscout:"
+          echo "   - wejdź do hamburger menu strony Nightscout i wybierz: 【 Narzędzia administratora 】- wymaga zalogowania"
+          echo "     to powinno otwórzyć adres: https://${domain}/admin"
+          echo "   - w polach tekstowych poustawiaj ile dni historii chcesz zachować, i w odpowiednich sekcjach kliknij:"
+          echo "     【 Usuń stare dokumenty 】"
+          echo " "
+          echo "2. Posprzątać nieużywane pliki na serwerze mikr.us:"
+          echo "   - zaloguj się na swój mikr.us do panelu administracyjnego, przejdź do WebSSH"
+          echo "     https://mikr.us/panel/?a=webssh"
+          echo "   - zaloguj się, uruchom narzędzie komendą: nightscout-tool"
+          echo "   - wybierz: 【 C) Sprztąj... 】"
+          echo "   - wybierz: 【 A) Posprzątaj wszystko 】 i potwierdź 【 Tak 】"
+          echo "   - cierpliwie poczekaj, po sprzątaniu narzędzie pokaże ile miejsca zwolniono"
+        } | pusher "🚨_Krytycznie_mało_miejsca_na_Twoim_serwerze_Nightscout!"
+        echo "Free space on server: CRITICALLY LOW (${remainingTxt}) - sending email to user"
+      else
+        echo "Free space on server: CRITICALLY LOW (${remainingTxt}) - user already notified"
+      fi
+    else
+      local lastCalled=$(get_since_last_time "disk_warning")
+	    local domain=$(get_td_domain)
+      if ((lastCalled == -1)) || ((lastCalled > DISK_LOW_MAIL)); then
+        set_last_time "disk_warning"
+        {
+          echo "Na twoim serwerze mikr.us z Nightscout-em (https://$domain) powoli kończy się miejsce (${remainingTxt})!"
+          echo " "
+          echo "🧹 W wolnej chwili posprzątaj na serwerze, aby to zrobić możesz:"
+          echo " "
+          echo "1. Usunąć stare statusy i wpisy z poziomu strony Nightscout:"
+          echo "   - wejdź do hamburger menu strony Nightscout i wybierz:【 Narzędzia administratora 】- wymaga zalogowania"
+          echo "     to powinno otwórzyć adres: https://${domain}/admin"
+          echo "   - w polach tekstowych poustawiaj ile dni historii chcesz zachować, i w odpowiednich sekcjach kliknij:"
+          echo "     【 Usuń stare dokumenty 】"
+          echo " "
+          echo "2. Posprzątać nieużywane pliki na serwerze mikr.us:"
+          echo "   - zaloguj się na swój mikr.us do panelu administracyjnego, przejdź do WebSSH"
+          echo "     https://mikr.us/panel/?a=webssh"
+          echo "   - zaloguj się, uruchom narzędzie komendą: nightscout-tool"
+          echo "   - wybierz: 【 C) Sprztąj... 】"
+          echo "   - wybierz: 【 A) Posprzątaj wszystko 】 i potwierdź 【 Tak 】"
+          echo "   - cierpliwie poczekaj, po sprzątaniu narzędzie pokaże ile miejsca zwolniono"
+        } | pusher "🧹_Powoli_kończy_sie_miejsce_na_Twoim_serwerze_Nightscout!"
+        echo "Free space on server: LOW (${remainingTxt}) - sending email to user"
+      else
+        echo "Free space on server: LOW (${remainingTxt}) - user already notified"
+      fi
+    fi
+  else
+    clear_last_time "disk_critical"
+    clear_last_time "disk_warning"
+    echo "Free space on server: OK (${remainingTxt})"
+  fi
+}
+
 watchdog_check() {
 	echo "Nightscout Watchdog mode"
 
@@ -2134,6 +2236,8 @@ watchdog_check() {
 		echo "Watchdog last status is $STATUS_AGO seconds old, ignoring"
 		WATCHDOG_LAST_STATUS="unknown"
 	fi
+
+  free_space_check
 
 	local NS_STATUS=$(get_container_status_code 'ns-server')
 	local DB_STATUS=$(get_container_status_code 'ns-database')
@@ -2178,7 +2282,7 @@ watchdog_check() {
 					fi
 				fi
 			else
-				regex3='coś poszło nie tak'
+				regex3='poszło nie tak'
 				if [[ "$html" =~ $regex3 ]]; then
 					echo "Nightscout is still restarting..."
 					WATCHDOG_STATUS="awaiting"

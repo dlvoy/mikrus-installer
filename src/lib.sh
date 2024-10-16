@@ -29,12 +29,12 @@ TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
-DISK_LOW_WARNING=838860800 # == 800 MiB
-DISK_LOW_MAIL=5184000 # == 60 days in seconds
+DISK_LOW_WARNING=838860800      # == 800 MiB
+DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
-DISK_CRITICAL_MAIL=604800 # == 7 days in seconds
-SCRIPT_VERSION="1.9.0"         #auto-update
-SCRIPT_BUILD_TIME="2024.10.12" #auto-update
+DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
+SCRIPT_VERSION="1.9.1"          #auto-update
+SCRIPT_BUILD_TIME="2024.10.16"  #auto-update
 
 #=======================================
 # SETUP
@@ -149,6 +149,8 @@ uni_confirm_ed=" $(printf '\U1F4DD') Edytuj "
 uni_install=" $(printf '\U1F680') Instaluj "
 uni_resign=" $(printf '\U1F6AB') Rezygnuję "
 uni_send=" $(printf '\U1F4E7') Wyślij "
+uni_delete=" $(printf '\U1F5D1') Usuń "
+uni_leave_logs=" $(printf '\U1F4DC') Zostaw "
 
 uni_ns_ok="$(printf '\U1F7E2') działa"
 uni_watchdog_ok="$(printf '\U1F415') Nightscout działa"
@@ -248,13 +250,13 @@ set_last_time() {
 	local actionName=$1
 	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
 	local nowDate="$(date +'%s')"
-  echo "$nowDate" > "$actionFile"
+	echo "$nowDate" >"$actionFile"
 }
 
 clear_last_time() {
 	local actionName=$1
 	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
-  rm -f "$actionFile"
+	rm -f "$actionFile"
 }
 
 #=======================================
@@ -1605,6 +1607,32 @@ do_cleanup_db() {
 	msgcheck "Czyszczenie kopii zapasowych zakończono"
 }
 
+do_cleanup_container_logs() {
+	ohai "Zatrzymywanie kontenerów..."
+	docker stop 'ns-server'
+	docker stop 'ns-database'
+	docker stop 'ns-backup'
+	ohai "Usuwanie logów kontenerów..."
+	truncate -s 0 "$(docker inspect --format='{{.LogPath}}' 'ns-server')"
+	truncate -s 0 "$(docker inspect --format='{{.LogPath}}' 'ns-database')"
+	truncate -s 0 "$(docker inspect --format='{{.LogPath}}' 'ns-backup')"
+	ohai "Ponowne uruchamianie kontenerów..."
+	docker start 'ns-server'
+	docker start 'ns-database'
+	docker start 'ns-backup'
+	msgok "Logi usunięte"
+}
+
+prompt_cleanup_container_logs() {
+	yesnodlg "Usunąć logi kontenerów?" "$uni_delete" "$uni_leave_logs" \
+		"Czy chcesz usunąć logi kontenerów nightscout i bazy?" \
+		"${TL}Jeśli Twój serwer działa poprawnie," \
+		"${NL}- możesz spokojnie usunąć logi." \
+		"${TL}Jeśli masz problem z serwerem - zostaw logi!" \
+		"${NL}- logi mogą być niezbędne do diagnostyki" \
+		"${TL}(ta operacja uruchomi ponownie kontenery)"
+}
+
 cleanup_menu() {
 
 	while :; do
@@ -1633,11 +1661,12 @@ cleanup_menu() {
 
 		local CHOICE=$(whiptail --title "Sprzątanie" --menu \
 			"${statusTitle/=/%}" \
-			16 50 5 \
+			17 50 6 \
 			"A)" "Posprzątaj wszystko" \
 			"S)" "Posprzątaj zasoby systemowe" \
 			"D)" "Usuń nieużywane obrazy Dockera" \
 			"B)" "Usuń kopie zapasowe bazy danych" \
+			"L)" "Usuń logi kontenerów" \
 			"M)" "Powrót do menu" \
 			--ok-button="Wybierz" --cancel-button="$uni_back" \
 			3>&2 2>&1 1>&3)
@@ -1652,9 +1681,17 @@ cleanup_menu() {
 					"${NL} ${uni_bullet}kopie zapasowe bazy danych")" \
 				"${TL}(ta operacja może potrwać od kilku do kilkudziesięciu minut)"
 			if ! [ $? -eq 1 ]; then
-				do_cleanup_sys
-				do_cleanup_docker
-				do_cleanup_db
+				prompt_cleanup_container_logs
+				if ! [ $? -eq 1 ]; then
+					do_cleanup_container_logs
+					do_cleanup_sys
+					do_cleanup_docker
+					do_cleanup_db
+				else
+					do_cleanup_sys
+					do_cleanup_docker
+					do_cleanup_db
+				fi
 			fi
 			;;
 		"S)")
@@ -1679,6 +1716,12 @@ cleanup_menu() {
 				"${NL}(na razie i tak nie ma automatycznego mechanizmu ich wykorzystania)"
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_db
+			fi
+			;;
+		"L)")
+			prompt_cleanup_container_logs
+			if ! [ $? -eq 1 ]; then
+				do_cleanup_container_logs
 			fi
 			;;
 		"M)")
@@ -2124,74 +2167,74 @@ install_or_menu() {
 
 free_space_check() {
 	lastTimeSpaceInfo=$(get_space_info)
-  
+
 	local remainingB=$(echo "$lastTimeSpaceInfo" | awk '{print $3}')
 	local remainingTxt=$(echo "$lastTimeSpaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
 
-  if ((remainingB < DISK_LOW_WARNING)); then
-    if ((remainingB < DISK_CRITICAL_WARNING)); then
-      local lastCalled=$(get_since_last_time "disk_critical")
-	    local domain=$(get_td_domain)
-      if ((lastCalled == -1)) || ((lastCalled > DISK_CRITICAL_MAIL)); then
-        set_last_time "disk_critical"
-        {
-          echo "Na twoim serwerze mikr.us z Nightscoutem (https://$domain) zostało krytycznie mało miejsca (${remainingTxt})!"
-          echo " "
-          echo "Tak mała ilość miejsca nie pozwala serwerowi na stabilne działanie!"
-          echo "🚨PILNIE🚨 posprzątaj na serwerze, aby to zrobić możesz:"
-          echo " "
-          echo "1. Usunąć stare statusy i wpisy z poziomu strony Nightscout:"
-          echo "   - wejdź do hamburger menu strony Nightscout i wybierz: 【 Narzędzia administratora 】- wymaga zalogowania"
-          echo "     to powinno otwórzyć adres: https://${domain}/admin"
-          echo "   - w polach tekstowych poustawiaj ile dni historii chcesz zachować, i w odpowiednich sekcjach kliknij:"
-          echo "     【 Usuń stare dokumenty 】"
-          echo " "
-          echo "2. Posprzątać nieużywane pliki na serwerze mikr.us:"
-          echo "   - zaloguj się na swój mikr.us do panelu administracyjnego, przejdź do WebSSH"
-          echo "     https://mikr.us/panel/?a=webssh"
-          echo "   - zaloguj się, uruchom narzędzie komendą: nightscout-tool"
-          echo "   - wybierz: 【 C) Sprztąj... 】"
-          echo "   - wybierz: 【 A) Posprzątaj wszystko 】 i potwierdź 【 Tak 】"
-          echo "   - cierpliwie poczekaj, po sprzątaniu narzędzie pokaże ile miejsca zwolniono"
-        } | pusher "🚨_Krytycznie_mało_miejsca_na_Twoim_serwerze_Nightscout!"
-        echo "Free space on server: CRITICALLY LOW (${remainingTxt}) - sending email to user"
-      else
-        echo "Free space on server: CRITICALLY LOW (${remainingTxt}) - user already notified"
-      fi
-    else
-      local lastCalled=$(get_since_last_time "disk_warning")
-	    local domain=$(get_td_domain)
-      if ((lastCalled == -1)) || ((lastCalled > DISK_LOW_MAIL)); then
-        set_last_time "disk_warning"
-        {
-          echo "Na twoim serwerze mikr.us z Nightscout-em (https://$domain) powoli kończy się miejsce (${remainingTxt})!"
-          echo " "
-          echo "🧹 W wolnej chwili posprzątaj na serwerze, aby to zrobić możesz:"
-          echo " "
-          echo "1. Usunąć stare statusy i wpisy z poziomu strony Nightscout:"
-          echo "   - wejdź do hamburger menu strony Nightscout i wybierz:【 Narzędzia administratora 】- wymaga zalogowania"
-          echo "     to powinno otwórzyć adres: https://${domain}/admin"
-          echo "   - w polach tekstowych poustawiaj ile dni historii chcesz zachować, i w odpowiednich sekcjach kliknij:"
-          echo "     【 Usuń stare dokumenty 】"
-          echo " "
-          echo "2. Posprzątać nieużywane pliki na serwerze mikr.us:"
-          echo "   - zaloguj się na swój mikr.us do panelu administracyjnego, przejdź do WebSSH"
-          echo "     https://mikr.us/panel/?a=webssh"
-          echo "   - zaloguj się, uruchom narzędzie komendą: nightscout-tool"
-          echo "   - wybierz: 【 C) Sprztąj... 】"
-          echo "   - wybierz: 【 A) Posprzątaj wszystko 】 i potwierdź 【 Tak 】"
-          echo "   - cierpliwie poczekaj, po sprzątaniu narzędzie pokaże ile miejsca zwolniono"
-        } | pusher "🧹_Powoli_kończy_sie_miejsce_na_Twoim_serwerze_Nightscout!"
-        echo "Free space on server: LOW (${remainingTxt}) - sending email to user"
-      else
-        echo "Free space on server: LOW (${remainingTxt}) - user already notified"
-      fi
-    fi
-  else
-    clear_last_time "disk_critical"
-    clear_last_time "disk_warning"
-    echo "Free space on server: OK (${remainingTxt})"
-  fi
+	if ((remainingB < DISK_LOW_WARNING)); then
+		if ((remainingB < DISK_CRITICAL_WARNING)); then
+			local lastCalled=$(get_since_last_time "disk_critical")
+			local domain=$(get_td_domain)
+			if ((lastCalled == -1)) || ((lastCalled > DISK_CRITICAL_MAIL)); then
+				set_last_time "disk_critical"
+				{
+					echo "Na twoim serwerze mikr.us z Nightscoutem (https://$domain) zostało krytycznie mało miejsca (${remainingTxt})!"
+					echo " "
+					echo "Tak mała ilość miejsca nie pozwala serwerowi na stabilne działanie!"
+					echo "🚨PILNIE🚨 posprzątaj na serwerze, aby to zrobić możesz:"
+					echo " "
+					echo "1. Usunąć stare statusy i wpisy z poziomu strony Nightscout:"
+					echo "   - wejdź do hamburger menu strony Nightscout i wybierz: 【 Narzędzia administratora 】- wymaga zalogowania"
+					echo "     to powinno otwórzyć adres: https://${domain}/admin"
+					echo "   - w polach tekstowych poustawiaj ile dni historii chcesz zachować, i w odpowiednich sekcjach kliknij:"
+					echo "     【 Usuń stare dokumenty 】"
+					echo " "
+					echo "2. Posprzątać nieużywane pliki na serwerze mikr.us:"
+					echo "   - zaloguj się na swój mikr.us do panelu administracyjnego, przejdź do WebSSH"
+					echo "     https://mikr.us/panel/?a=webssh"
+					echo "   - zaloguj się, uruchom narzędzie komendą: nightscout-tool"
+					echo "   - wybierz: 【 C) Sprztąj... 】"
+					echo "   - wybierz: 【 A) Posprzątaj wszystko 】 i potwierdź 【 Tak 】"
+					echo "   - cierpliwie poczekaj, po sprzątaniu narzędzie pokaże ile miejsca zwolniono"
+				} | pusher "🚨_Krytycznie_mało_miejsca_na_Twoim_serwerze_Nightscout!"
+				echo "Free space on server: CRITICALLY LOW (${remainingTxt}) - sending email to user"
+			else
+				echo "Free space on server: CRITICALLY LOW (${remainingTxt}) - user already notified"
+			fi
+		else
+			local lastCalled=$(get_since_last_time "disk_warning")
+			local domain=$(get_td_domain)
+			if ((lastCalled == -1)) || ((lastCalled > DISK_LOW_MAIL)); then
+				set_last_time "disk_warning"
+				{
+					echo "Na twoim serwerze mikr.us z Nightscout-em (https://$domain) powoli kończy się miejsce (${remainingTxt})!"
+					echo " "
+					echo "🧹 W wolnej chwili posprzątaj na serwerze, aby to zrobić możesz:"
+					echo " "
+					echo "1. Usunąć stare statusy i wpisy z poziomu strony Nightscout:"
+					echo "   - wejdź do hamburger menu strony Nightscout i wybierz:【 Narzędzia administratora 】- wymaga zalogowania"
+					echo "     to powinno otwórzyć adres: https://${domain}/admin"
+					echo "   - w polach tekstowych poustawiaj ile dni historii chcesz zachować, i w odpowiednich sekcjach kliknij:"
+					echo "     【 Usuń stare dokumenty 】"
+					echo " "
+					echo "2. Posprzątać nieużywane pliki na serwerze mikr.us:"
+					echo "   - zaloguj się na swój mikr.us do panelu administracyjnego, przejdź do WebSSH"
+					echo "     https://mikr.us/panel/?a=webssh"
+					echo "   - zaloguj się, uruchom narzędzie komendą: nightscout-tool"
+					echo "   - wybierz: 【 C) Sprztąj... 】"
+					echo "   - wybierz: 【 A) Posprzątaj wszystko 】 i potwierdź 【 Tak 】"
+					echo "   - cierpliwie poczekaj, po sprzątaniu narzędzie pokaże ile miejsca zwolniono"
+				} | pusher "🧹_Powoli_kończy_sie_miejsce_na_Twoim_serwerze_Nightscout!"
+				echo "Free space on server: LOW (${remainingTxt}) - sending email to user"
+			else
+				echo "Free space on server: LOW (${remainingTxt}) - user already notified"
+			fi
+		fi
+	else
+		clear_last_time "disk_critical"
+		clear_last_time "disk_warning"
+		echo "Free space on server: OK (${remainingTxt})"
+	fi
 }
 
 watchdog_check() {
@@ -2221,7 +2264,7 @@ watchdog_check() {
 		WATCHDOG_LAST_STATUS="unknown"
 	fi
 
-  free_space_check
+	free_space_check
 
 	local NS_STATUS=$(get_container_status_code 'ns-server')
 	local DB_STATUS=$(get_container_status_code 'ns-database')

@@ -6,6 +6,7 @@
 #=======================================
 
 REQUIRED_NODE_VERSION=18.0.0
+REQUIRED_DOTENV_VERSION=1.3.0
 LOGTO=/dev/null
 NIGHTSCOUT_ROOT_DIR=/srv/nightscout
 CONFIG_ROOT_DIR=/srv/nightscout/config
@@ -23,6 +24,7 @@ WATCHDOG_LOG_FILE=/srv/nightscout/data/watchdog.log
 WATCHDOG_FAILURES_FILE=/srv/nightscout/data/watchdog-failures.log
 WATCHDOG_CRON_LOG=/srv/nightscout/data/watchdog-cron.log
 SUPPORT_LOG=/srv/nightscout/data/support.log
+EVENTS_DB=/srv/nightscout/data/events.env
 UPDATE_CHANNEL_FILE=/srv/nightscout/data/update_channel
 MONGO_DB_DIR=/srv/nightscout/data/mongodb
 TOOL_FILE=/srv/nightscout/tools/nightscout-tool
@@ -33,8 +35,9 @@ DISK_LOW_WARNING=838860800      # == 800 MiB
 DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
+DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
 SCRIPT_VERSION="1.9.1"          #auto-update
-SCRIPT_BUILD_TIME="2024.10.16"  #auto-update
+SCRIPT_BUILD_TIME="2024.10.18"  #auto-update
 
 #=======================================
 # SETUP
@@ -234,6 +237,174 @@ exit_on_no_cancel() {
 	fi
 }
 
+event_mark() {
+	local eventName=$1
+	local eventTime=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	mkdir -p "/srv/nightscout/data" >>"$LOGTO" 2>&1
+	dotenv-tool -r -i "${EVENTS_DB}" -m "${eventName}=${eventTime}"
+}
+
+join_by() {
+	local d=${1-} f=${2-}
+	if shift 2; then
+		printf %s "$f" "${@/#/$d}"
+	fi
+}
+
+event_label() {
+	case $1 in
+	cleanup)
+		echo "Czyszczenie"
+		;;
+	install)
+		echo "Instalacja"
+		;;
+	update_system)
+		echo "Aktualizacja systemu"
+		;;
+	update_tools)
+		echo "Aktualizacja narzędzia"
+		;;
+	update_containers)
+		echo "Aktualizacja kontenerów"
+		;;
+	uninstall)
+		echo "Odinstalowanie"
+		;;
+	remove_containers)
+		echo "Usunięcie kontenerów"
+		;;
+	remove_db_data)
+		echo "Usunięcie danych bazy"
+		;;
+	remove_all_data)
+		echo "Usunięcie danych"
+		;;
+	change_ns_version)
+		echo "Zmiana wersji Nightscout"
+		;;
+	edit_env_manual)
+		echo "Edycja konfiguracji"
+		;;
+	restart_both)
+		echo "Wymuszony restart NS+DB"
+		;;
+	restart_ns)
+		echo "Wymuszony restart NS"
+		;;
+	last_disk_warning)
+		echo "Brak miejsca"
+		;;
+	last_disk_critical)
+		echo "Krytyczny brak miejsca"
+		;;
+	last_docker_down)
+		echo "Awaria Dockera"
+		;;
+	last_server_restart_needed)
+		echo "Potrzebny restart serwera"
+		;;
+	*)
+		echo "$1"
+		;;
+	esac
+}
+
+lpad_text() {
+	local inText="$1"
+	local len=${#inText}
+	local spaces="                                                                      "
+	echo "${spaces:0:$(($2 - len))}$1"
+}
+
+event_count() {
+	if [ ! -f ${EVENTS_DB} ]; then
+		echo "0"
+	else
+		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")
+		local eventsKeysStr=$(echo "${eventsJSON}" | jq -r ".values | keys[]")
+		local eventsCount=${#eventsKeysStr}
+		if ((eventsCount > 0)); then
+			mapfile -t eventList < <(echo "${eventsKeysStr}")
+      echo "${#eventList}"
+    else
+      echo "0"
+    fi
+  fi 
+}
+
+event_list() {
+	if [ ! -f ${EVENTS_DB} ]; then
+		echo "Nie odnotowano zdarzeń"
+	else
+		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")
+		local eventsKeysStr=$(echo "${eventsJSON}" | jq -r ".values | keys[]")
+		local eventsCount=${#eventsKeysStr}
+
+		if ((eventsCount > 0)); then
+			mapfile -t eventList < <(echo "${eventsKeysStr}")
+
+			local namesTab=()
+			local labelsTab=()
+			local valuesTab=()
+			for eventId in "${eventList[@]}"; do
+				mapfile -t -d '_' eventIdSplit <<<"${eventId}"
+				local eventTail=$(echo "${eventIdSplit[-1]}" | tr -d '\n')
+				unset "eventIdSplit[-1]"
+				printf -v eventBase '%s_' "${eventIdSplit[@]}"
+				local eventName="${eventBase%_}"
+				if [ ${#eventIdSplit[@]} -eq 0 ]; then
+					eventName="$eventTail"
+					eventTail=""
+				fi
+
+				if [[ "$eventTail" == "start" ]] || [[ "$eventTail" == "end" ]]; then
+					if [[ ! " ${namesTab[*]} " =~ [[:space:]]${eventName}[[:space:]] ]]; then
+						namesTab+=("${eventName}")
+						local startVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_start")
+						local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_end")
+						local joinedVar="od: $startVar do: $endVar"
+						local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|do): null ?//g")
+						valuesTab+=("$fixedVar")
+					fi
+				else
+					if [[ "$eventTail" == "set" ]] || [[ "$eventTail" == "clear" ]]; then
+						if [[ ! " ${namesTab[*]} " =~ [[:space:]]${eventName}[[:space:]] ]]; then
+							namesTab+=("${eventName}")
+							local startVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_set")
+							local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_clear")
+							local joinedVar="od: $startVar zdjęto: $endVar"
+							local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|zdjęto): null ?//g")
+							valuesTab+=("$fixedVar")
+						fi
+					else
+						namesTab+=("${eventId}")
+						local exactVar=$(echo "$eventsJSON" | jq -r ".values.${eventId}")
+						valuesTab+=("$exactVar")
+					fi
+				fi
+			done
+
+			local maxLen=0
+
+			for ((i = 0; i < ${#namesTab[@]}; i++)); do
+				local eventLab="$(event_label "${namesTab[$i]}")"
+				local labelLen=${#eventLab}
+				maxLen=$((labelLen > maxLen ? labelLen : maxLen))
+				labelsTab+=("$eventLab")
+			done
+
+			maxLen=$((maxLen + 1))
+
+			for ((i = 0; i < ${#namesTab[@]}; i++)); do
+				echo "$(lpad_text "${labelsTab[$i]}" "$maxLen") = ${valuesTab[$i]}"
+			done
+		else
+			echo "Nie odnotowano zdarzeń"
+		fi
+	fi
+}
+
 get_since_last_time() {
 	local actionName=$1
 	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
@@ -251,12 +422,14 @@ set_last_time() {
 	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
 	local nowDate="$(date +'%s')"
 	echo "$nowDate" >"$actionFile"
+	event_mark "last_${actionName}_set"
 }
 
 clear_last_time() {
 	local actionName=$1
 	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
 	rm -f "$actionFile"
+	event_mark "last_${actionName}_clear"
 }
 
 #=======================================
@@ -272,8 +445,8 @@ echo_progress() {
 
 	if [ "$realProg" -eq "0" ]; then
 		local progrsec=$(((countr * realStart) / (3 * firstPhaseSecs)))
-		if [ $progrsec -lt "$realStart" ]; then
-			echo $progrsec
+		if [ "$progrsec" -lt "$realStart" ]; then
+			echo "$progrsec"
 		else
 			echo "$realStart"
 		fi
@@ -292,7 +465,7 @@ process_gauge() {
 	while true; do
 		echo 0
 		while kill -0 "$thepid" >/dev/null 2>&1; do
-			eval "$2" $num
+			eval "$2" "$num"
 			num=$((num + 1))
 			sleep 0.3
 		done
@@ -425,11 +598,11 @@ yesnodlg_base() {
 	local padw=$((mwidth + rpad))
 
 	if [[ "$defaultbtn" == "y" ]]; then
-		whiptail --title "$title" --yesno "$(center_multiline $padw "$msg")" \
+		whiptail --title "$title" --yesno "$(center_multiline "$padw" "$msg")" \
 			--yes-button "$ybtn" --no-button "$nbtn" \
 			$((linec + 7)) $((padw + 4))
 	else
-		whiptail --title "$title" --yesno --defaultno "$(center_multiline $padw "$msg")" \
+		whiptail --title "$title" --yesno --defaultno "$(center_multiline "$padw" "$msg")" \
 			--yes-button "$ybtn" --no-button "$nbtn" \
 			$((linec + 7)) $((padw + 4))
 	fi
@@ -468,7 +641,7 @@ setup_update_repo() {
 	if [ "$aptGetWasUpdated" -eq "0" ]; then
 		aptGetWasUpdated=1
 		ohai "Updating package repository"
-		apt-get -yq update >>$LOGTO 2>&1
+		apt-get -yq update >>"$LOGTO" 2>&1
 	fi
 }
 
@@ -482,7 +655,7 @@ test_node() {
 # $2 package name
 add_if_not_ok() {
 	local RESULT=$?
-	if [ $RESULT -eq 0 ]; then
+	if [ "$RESULT" -eq 0 ]; then
 		msgcheck "$1 installed"
 	else
 		packages+=("$2")
@@ -491,11 +664,11 @@ add_if_not_ok() {
 
 add_if_not_ok_cmd() {
 	local RESULT=$?
-	if [ $RESULT -eq 0 ]; then
+	if [ "$RESULT" -eq 0 ]; then
 		msgcheck "$1 installed"
 	else
 		ohai "Installing $1..."
-		eval "$2" >>$LOGTO 2>&1 && msgcheck "Installing $1 successfull"
+		eval "$2" >>"$LOGTO" 2>&1 && msgcheck "Installing $1 successfull"
 	fi
 }
 
@@ -520,8 +693,19 @@ check_jq() {
 }
 
 check_dotenv() {
-	dotenv-tool -v >/dev/null 2>&1
-	add_if_not_ok_cmd "dotenv-tool" "npm install -g dotenv-tool --registry https://npm.dzienia.pl"
+	if dotenv-tool -v >/dev/null 2>&1; then
+		local dotEnvVersion="$(dotenv-tool -v 2>/dev/null)"
+		if version_ge "$(major_minor "${dotEnvVersion}")" \
+			"$(major_minor "${REQUIRED_DOTENV_VERSION}")"; then
+			msgcheck "dotenv-tool installed (${dotEnvVersion})"
+		else
+			ohai "Updating dotenv-tool (from: ${dotEnvVersion})"
+			eval "npm install -g dotenv-tool --registry https://npm.dzienia.pl" >>"$LOGTO" 2>&1 && msgcheck "Updating dotenv-tool successfull"
+		fi
+	else
+		ohai "Installing dotenv-tool..."
+		eval "npm install -g dotenv-tool --registry https://npm.dzienia.pl" >>"$LOGTO" 2>&1 && msgcheck "Installing dotenv-tool successfull"
+	fi
 }
 
 check_ufw() {
@@ -552,7 +736,7 @@ setup_provisional_key() {
 	ohai "Generating provisional log encryption key"
 	local randPass=$(openssl rand -base64 30)
 	local fixedPass=$(echo "$randPass" | sed -e 's/[+\/]/-/g')
-	echo "tymczasowe-${fixedPass}" >$LOG_ENCRYPTION_KEY_FILE
+	echo "tymczasowe-${fixedPass}" >"$LOG_ENCRYPTION_KEY_FILE"
 	msgcheck "Provisional key generated"
 }
 
@@ -561,7 +745,7 @@ setup_security() {
 		# --------------------
 		# JAKIŚ klucz istnieje
 		# --------------------
-		local logKey=$(<$LOG_ENCRYPTION_KEY_FILE)
+		local logKey=$(<"$LOG_ENCRYPTION_KEY_FILE")
 		local regexTemp='tymczasowe-'
 
 		# -----------------------
@@ -571,9 +755,9 @@ setup_security() {
 			msgerr "Using provisional key"
 			test_diceware
 			local RESULT=$?
-			if [ $RESULT -eq 0 ]; then
+			if [ "$RESULT" -eq 0 ]; then
 				ohai "Generating proper log encryption file..."
-				diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+				diceware -n 5 -d - >"$LOG_ENCRYPTION_KEY_FILE"
 				msgcheck "Key generated"
 			else
 				msgerr "Required tool (diceware) still cannot be installed - apt is locked!"
@@ -589,9 +773,9 @@ setup_security() {
 				msgerr "Encryption key empty or too short, generating better one"
 				test_diceware
 				local RESULT=$?
-				if [ $RESULT -eq 0 ]; then
+				if [ "$RESULT" -eq 0 ]; then
 					ohai "Generating proper log encryption file..."
-					diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+					diceware -n 5 -d - >"$LOG_ENCRYPTION_KEY_FILE"
 					msgcheck "Key generated"
 				else
 					msgerr "Generating provisional key while diceware tool is not installed"
@@ -609,9 +793,9 @@ setup_security() {
 
 		test_diceware
 		local RESULT=$?
-		if [ $RESULT -eq 0 ]; then
+		if [ "$RESULT" -eq 0 ]; then
 			ohai "Generating log encryption key..."
-			diceware -n 5 -d - >$LOG_ENCRYPTION_KEY_FILE
+			diceware -n 5 -d - >"$LOG_ENCRYPTION_KEY_FILE"
 			msgcheck "Key generated"
 		else
 			msgerr "Generating provisional key while diceware tool is not installed"
@@ -626,14 +810,14 @@ setup_packages() {
 	# shellcheck disable=SC2068
 	(ifIsSet packages && setup_update_repo &&
 		ohai "Installing packages: ${packages[@]}" &&
-		apt-get -yq install ${packages[@]} >>$LOGTO 2>&1 &&
+		apt-get -yq install ${packages[@]} >>"$LOGTO" 2>&1 &&
 		msgcheck "Install successfull") || msgok "All required packages already installed"
 }
 
 setup_node() {
 	test_node
 	local RESULT=$?
-	if [ $RESULT -eq 0 ]; then
+	if [ "$RESULT" -eq 0 ]; then
 		msgcheck "Node installed in correct version"
 	else
 		ohai "Cleaning old Node.js"
@@ -642,17 +826,17 @@ setup_node() {
 			apt-get -yq --fix-broken install
 			apt-get -yq update
 			apt-get -yq remove nodejs nodejs-doc libnode*
-		} >>$LOGTO 2>&1
+		} >>"$LOGTO" 2>&1
 
 		ohai "Preparing Node.js setup"
 		curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - >/dev/null 2>&1
 
 		ohai "Installing Node.js"
-		apt-get install -y nodejs >>$LOGTO 2>&1
+		apt-get install -y nodejs >>"$LOGTO" 2>&1
 
 		test_node
 		local RECHECK=$?
-		if [ $RECHECK -ne 0 ]; then
+		if [ "$RECHECK" -ne 0 ]; then
 
 			msgerr "Nie udało się zainstalować Node.js"
 
@@ -669,7 +853,7 @@ setup_node() {
 setup_users() {
 	id -u mongodb &>/dev/null
 	local RESULT=$?
-	if [ $RESULT -eq 0 ]; then
+	if [ "$RESULT" -eq 0 ]; then
 		msgcheck "Mongo DB user detected"
 	else
 		ohai "Configuring Mongo DB user"
@@ -679,11 +863,12 @@ setup_users() {
 
 setup_dir_structure() {
 	ohai "Configuring folder structure"
-	mkdir -p $MONGO_DB_DIR
+	mkdir -p "$MONGO_DB_DIR"
 	mkdir -p /srv/nightscout/config
 	mkdir -p /srv/nightscout/tools
-	mkdir -p $UPDATES_DIR
-	chown -R mongodb:root $MONGO_DB_DIR
+	mkdir -p /srv/nightscout/data
+	mkdir -p "$UPDATES_DIR"
+	chown -R mongodb:root "$MONGO_DB_DIR"
 }
 
 setup_firewall() {
@@ -695,7 +880,7 @@ setup_firewall() {
 
 		ufw allow OpenSSH
 		ufw allow ssh
-	} >>$LOGTO 2>&1
+	} >>"$LOGTO" 2>&1
 
 	host=$(hostname)
 	host=${host:1}
@@ -704,30 +889,30 @@ setup_firewall() {
 	port2=$((20000 + host))
 	port3=$((30000 + host))
 
-	if ufw allow $port1 >>$LOGTO 2>&1; then
+	if ufw allow "$port1" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port $port1"
 	else
 		msgerr "Blad dodawania $port1 do regul firewalla"
 	fi
 
-	if ufw allow $port2 >>$LOGTO 2>&1; then
+	if ufw allow "$port2" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port $port2"
 	else
 		msgerr "Blad dodawania $port2 do regul firewalla"
 	fi
 
-	if ufw allow $port3 >>$LOGTO 2>&1; then
+	if ufw allow "$port3" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port $port3"
 	else
 		msgerr "Blad dodawania $port3 do regul firewalla"
 	fi
 
-	ufw --force enable >>$LOGTO 2>&1
+	ufw --force enable >>"$LOGTO" 2>&1
 }
 
 setup_firewall_for_ns() {
-	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-	if ufw allow "$ns_external_port" >>$LOGTO 2>&1; then
+	ns_external_port=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_PORT")
+	if ufw allow "$ns_external_port" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port Nightscout: $ns_external_port"
 	else
 		msgerr "Blad dodawania portu Nightscout: $ns_external_port do reguł firewalla"
@@ -763,23 +948,23 @@ get_space_info() {
 }
 
 install_containers() {
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up --no-recreate -d >>$LOGTO 2>&1
+	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up --no-recreate -d >>"$LOGTO" 2>&1
 }
 
 update_containers() {
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml pull >>$LOGTO 2>&1
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >>$LOGTO 2>&1
+	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml pull >>"$LOGTO" 2>&1
+	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >>"$LOGTO" 2>&1
 }
 
 install_containers_progress() {
 	local created=$(docker container ls -f 'status=created' -f name=ns-server -f name=ns-database | wc -l)
 	local current=$(docker container ls -f 'status=running' -f name=ns-server -f name=ns-database | wc -l)
 	local progr=$(((current - 1) * 2 + (created - 1)))
-	echo_progress $progr 6 50 "$1" 60
+	echo_progress "$progr" 6 50 "$1" 60
 }
 
 uninstall_containers() {
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >>$LOGTO 2>&1
+	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >>"$LOGTO" 2>&1
 }
 
 uninstall_containers_progress() {
@@ -789,31 +974,31 @@ uninstall_containers_progress() {
 	if [ "$(((running - 1) + (current - 1)))" -eq "0" ]; then
 		echo_progress 3 3 50 "$1" 15
 	else
-		echo_progress $progr 3 50 "$1" 15
+		echo_progress "$progr" 3 50 "$1" 15
 	fi
 }
 
 source_admin() {
 	if [[ -f $ENV_FILE_ADMIN ]]; then
 		# shellcheck disable=SC1090
-		source $ENV_FILE_ADMIN
+		source "$ENV_FILE_ADMIN"
 		msgok "Imported admin config"
 	fi
 }
 
 download_conf() {
-	download_if_not_exists "deployment config" $ENV_FILE_DEP "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
-	download_if_not_exists "nightscout config" $ENV_FILE_NS "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
-	download_if_not_exists "docker compose file" $DOCKER_COMPOSE_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
-	download_if_not_exists "profanity database" $PROFANITY_DB_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
-	download_if_not_exists "reservation database" $RESERVED_DB_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
+	download_if_not_exists "deployment config" "$ENV_FILE_DEP" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
+	download_if_not_exists "nightscout config" "$ENV_FILE_NS" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
+	download_if_not_exists "docker compose file" "$DOCKER_COMPOSE_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
+	download_if_not_exists "profanity database" "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
+	download_if_not_exists "reservation database" "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
 }
 
 download_tools() {
 	download_if_not_exists "update stamp" "$UPDATES_DIR/updated" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated"
 
 	if ! [[ -f $TOOL_FILE ]]; then
-		download_if_not_exists "nightscout-tool file" $TOOL_FILE "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
+		download_if_not_exists "nightscout-tool file" "$TOOL_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
 		local timestamp=$(date +%s)
 		echo "$timestamp" >"$UPDATES_DIR/timestamp"
 	else
@@ -825,8 +1010,8 @@ download_tools() {
 		ln -s "$TOOL_FILE" "$TOOL_LINK"
 	fi
 
-	chmod +x $TOOL_FILE
-	chmod +x $TOOL_LINK
+	chmod +x "$TOOL_FILE"
+	chmod +x "$TOOL_LINK"
 }
 
 extract_version() {
@@ -901,20 +1086,20 @@ update_if_needed() {
 				msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
 			fi
 
-			if [ $changed -eq 0 ]; then
+			if [ "$changed" -eq 0 ]; then
 				if [ $# -eq 1 ]; then
 					whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
 				fi
 			else
 				local okTxt=""
-				if [ $redeploy -gt 0 ]; then
+				if [ "$redeploy" -gt 0 ]; then
 					okTxt="\n\n $(printf "\U26A0") Aktualizacja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")"
 				fi
 
 				whiptail --title "Aktualizacja skryptów" --yesno "Zalecana jest aktualizacja plików:\n\n${uni_bullet}Skrypt instalacyjny:      $msgInst \n${uni_bullet}Konfiguracja deploymentu: $msgDep\n${uni_bullet}Konfiguracja Nightscout:  $msgNs \n${uni_bullet}Kompozycja usług:         $msgComp $okTxt" \
 					--yes-button "$uni_confirm_upd" --no-button "$uni_resign" 15 70
 				if ! [ $? -eq 1 ]; then
-					if [ $redeploy -gt 0 ]; then
+					if [ "$redeploy" -gt 0 ]; then
 						docker_compose_down
 					fi
 
@@ -954,7 +1139,7 @@ update_if_needed() {
 }
 
 about_dialog() {
-	LOG_KEY=$(<$LOG_ENCRYPTION_KEY_FILE)
+	LOG_KEY=$(<"$LOG_ENCRYPTION_KEY_FILE")
 	okdlg "O tym narzędziu..." \
 		"$(printf '\U1F9D1') (c) 2023 Dominik Dzienia" \
 		"${NL}$(printf '\U1F4E7') dominik.dzienia@gmail.com" \
@@ -1012,7 +1197,7 @@ prompt_mikrus_host() {
 		done
 
 		ohai "Updating admin config (host)"
-		dotenv-tool -pmr -i $ENV_FILE_ADMIN -- "MIKRUS_HOST=$MIKRUS_HOST"
+		dotenv-tool -pmr -i "$ENV_FILE_ADMIN" -- "MIKRUS_HOST=$MIKRUS_HOST"
 	fi
 }
 
@@ -1058,12 +1243,12 @@ prompt_mikrus_apikey() {
 		fi
 
 		ohai "Updating admin config (api key)"
-		dotenv-tool -pmr -i $ENV_FILE_ADMIN -- "MIKRUS_APIKEY=$MIKRUS_APIKEY"
+		dotenv-tool -pmr -i "$ENV_FILE_ADMIN" -- "MIKRUS_APIKEY=$MIKRUS_APIKEY"
 	fi
 }
 
 prompt_api_secret() {
-	API_SECRET=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+	API_SECRET=$(dotenv-tool -r get -f "$ENV_FILE_NS" "API_SECRET")
 
 	if ! [[ "$API_SECRET" =~ [a-zA-Z0-9%+=./:=@_]{12,} ]]; then
 		freshInstall=$((freshInstall + 1))
@@ -1110,7 +1295,7 @@ prompt_api_secret() {
 				fi
 				if [[ "$API_SECRET" == "$API_SECRET_CHECK" ]]; then
 					ohai "Updating nightscout config (api secret)"
-					dotenv-tool -pmr -i $ENV_FILE_NS -- "API_SECRET=$API_SECRET"
+					dotenv-tool -pmr -i "$ENV_FILE_NS" -- "API_SECRET=$API_SECRET"
 					break 2
 				else
 					whiptail --title "$uni_excl Nieprawidłowe API SECRET $uni_excl" --yesno "Podana wartości API SECRET różni się od poprzedniej!\nChcesz podać ponownie?\n" --yes-button "$uni_reenter" --no-button "$uni_noenter" 9 60
@@ -1139,7 +1324,7 @@ docker_compose_down() {
 }
 
 domain_setup_manual() {
-	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+	ns_external_port=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_PORT")
 	whiptail --title "Ustaw domenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw subdomenę:\n\n${uni_bullet}otwórz nową zakładkę w przeglądarce,\n${uni_bullet}wejdź do panelu administracyjnego swojego Mikr.us-a,\n${uni_bullet}otwórz sekcję [Subdomeny], pod adresem:\n\n${uni_bullet_pad}   https://mikr.us/panel/?a=domain\n\n${uni_bullet}w pole nazwy wpisz dowolną własną nazwę\n${uni_bullet_pad}(tylko małe litery i cyfry, max. 12 znaków)\n${uni_bullet}w pole numer portu wpisz:\n${uni_bullet_pad}\n                                $ns_external_port\n\n${uni_bullet}kliknij [Dodaj subdomenę] i poczekaj do kilku minut" 22 75
 }
 
@@ -1156,7 +1341,7 @@ domain_setup() {
 		return
 	fi
 
-	ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
+	ns_external_port=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_PORT")
 	whiptail --title "Ustaw subdomenę" --msgbox "Aby Nightscout był widoczny z internetu ustaw adres - subdomenę:\n\n                      [wybierz].ns.techdiab.pl\n\nWybrany początek subdomeny powinien:\n${uni_bullet}mieć długość od 4 do 12 znaków\n${uni_bullet}zaczynać się z małej litery,\n${uni_bullet}może składać się z małych liter i cyfr\n${uni_bullet}być unikalny, charakterystyczny i łatwa do zapamiętania" 16 75
 
 	while :; do
@@ -1170,7 +1355,7 @@ domain_setup() {
 
 			if [[ "$SUBDOMAIN" =~ ^[a-z][a-z0-9]{3,11}$ ]]; then
 
-				if printf "%s" "$SUBDOMAIN" | grep -f "$PROFANITY_DB_FILE" >>$LOGTO 2>&1; then
+				if printf "%s" "$SUBDOMAIN" | grep -f "$PROFANITY_DB_FILE" >>"$LOGTO" 2>&1; then
 					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
 						"Podana wartość:" \
 						"${NL}$SUBDOMAIN" \
@@ -1180,7 +1365,7 @@ domain_setup() {
 					continue
 				fi
 
-				if printf "%s" "$SUBDOMAIN" | grep -xf "$RESERVED_DB_FILE" >>$LOGTO 2>&1; then
+				if printf "%s" "$SUBDOMAIN" | grep -xf "$RESERVED_DB_FILE" >>"$LOGTO" 2>&1; then
 					okdlg "$uni_excl Nieprawidłowa subdomena $uni_excl" \
 						"Podana wartość:" \
 						"${NL}$SUBDOMAIN" \
@@ -1211,7 +1396,7 @@ domain_setup() {
 		fi
 
 		local MHOST=$(hostname)
-		local APISEC=$(dotenv-tool -r get -f $ENV_FILE_ADMIN "MIKRUS_APIKEY")
+		local APISEC=$(dotenv-tool -r get -f "$ENV_FILE_ADMIN" "MIKRUS_APIKEY")
 
 		ohai "Rejestrowanie subdomeny $SUBDOMAIN.ns.techdiab.pl"
 		local REGSTATUS=$(curl -sd "srv=$MHOST&key=$APISEC&domain=$SUBDOMAIN.ns.techdiab.pl" https://api.mikr.us/domain)
@@ -1250,7 +1435,7 @@ get_watchdog_age_string() {
 	local curr_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 	if [[ -f $WATCHDOG_TIME_FILE ]]; then
-		last_time=$(cat $WATCHDOG_TIME_FILE)
+		last_time=$(cat "$WATCHDOG_TIME_FILE")
 		local status_ago=$(dateutils.ddiff "$last_time" "$curr_time" -f '%Mmin. %Ssek.')
 		echo "$last_time ($status_ago temu)"
 	else
@@ -1264,11 +1449,11 @@ get_watchdog_status_code() {
 	local status="unknown"
 
 	if [[ -f $WATCHDOG_TIME_FILE ]]; then
-		last_time=$(cat $WATCHDOG_TIME_FILE)
+		last_time=$(cat "$WATCHDOG_TIME_FILE")
 	fi
 
 	if [[ -f $WATCHDOG_STATUS_FILE ]]; then
-		status=$(cat $WATCHDOG_STATUS_FILE)
+		status=$(cat "$WATCHDOG_STATUS_FILE")
 	fi
 
 	local status_ago=$(dateutils.ddiff "$curr_time" "$last_time" -f '%S')
@@ -1286,11 +1471,11 @@ get_watchdog_status_code_live() {
 	local status="unknown"
 
 	if [[ -f $WATCHDOG_TIME_FILE ]]; then
-		last_time=$(cat $WATCHDOG_TIME_FILE)
+		last_time=$(cat "$WATCHDOG_TIME_FILE")
 	fi
 
 	if [[ -f $WATCHDOG_STATUS_FILE ]]; then
-		status=$(cat $WATCHDOG_STATUS_FILE)
+		status=$(cat "$WATCHDOG_STATUS_FILE")
 	fi
 
 	local status_ago=$(dateutils.ddiff "$curr_time" "$last_time" -f '%S')
@@ -1339,7 +1524,13 @@ get_watchdog_status_code_live() {
 		if [ "$NS_STATUS" = "restarting" ] || [ "$DB_STATUS" = "restarting" ]; then
 			status="awaiting"
 		else
-			status="not_running"
+			local logSample=$(timeout -k 15 10 docker logs ns-server --tail "10" 2>&1)
+			local regexSample='Cannot connect to the Docker daemon'
+			if [[ "$logSample" =~ $regexSample ]]; then
+				status="docker_down"
+			else
+				status="not_running"
+			fi
 		fi
 	fi
 
@@ -1379,6 +1570,9 @@ get_watchdog_status() {
 	"crashed")
 		printf "\U1F4A5 awaria NS"
 		;;
+	"docker_down")
+		printf "\U1F4A5 awaria Dockera"
+		;;
 	esac
 
 }
@@ -1386,13 +1580,13 @@ get_watchdog_status() {
 show_watchdog_logs() {
 	local col=$((COLUMNS - 10))
 	local rws=$((LINES - 3))
-	if [ $col -gt 120 ]; then
+	if [ "$col" -gt 120 ]; then
 		col=160
 	fi
-	if [ $col -lt 60 ]; then
+	if [ "$col" -lt 60 ]; then
 		col=60
 	fi
-	if [ $rws -lt 12 ]; then
+	if [ "$rws" -lt 12 ]; then
 		rws=12
 	fi
 
@@ -1416,8 +1610,21 @@ show_watchdog_logs() {
 		fi
 	} >"$tmpfile"
 
-	whiptail --title "Logi Watchdoga" --scrolltext --textbox "$tmpfile" $rws $col
+	whiptail --title "Logi Watchdoga" --scrolltext --textbox "$tmpfile" "$rws" "$col"
 	rm "$tmpfile"
+}
+
+get_events_status() {
+  local count="$(event_count)"
+  if (( count == 0 )); then
+    printf "\U2728 brak zdarzeń"
+  elif (( count == 1 )); then
+    printf "\U1F4C5 jedno zdarzenie"
+  elif (( (count % 10) > 1)) && (( (count % 10) < 5)); then
+    printf "\U1F4C5 %s zdarzenia" "$count"
+  else
+    printf "\U1F4C5 %s zdarzeń" "$count"
+  fi
 }
 
 get_container_status() {
@@ -1463,13 +1670,13 @@ get_container_status_code() {
 show_logs() {
 	local col=$((COLUMNS - 10))
 	local rws=$((LINES - 4))
-	if [ $col -gt 120 ]; then
+	if [ "$col" -gt 120 ]; then
 		col=160
 	fi
-	if [ $col -lt 60 ]; then
+	if [ "$col" -lt 60 ]; then
 		col=60
 	fi
-	if [ $rws -lt 12 ]; then
+	if [ "$rws" -lt 12 ]; then
 		rws=12
 	fi
 
@@ -1477,18 +1684,19 @@ show_logs() {
 	if [ -n "$ID" ]; then
 		local tmpfile=$(mktemp)
 		docker logs "$ID" 2>&1 | tail $((rws * -6)) | sed 's/\x1B\[[0-9;]\{1,\}[A-Za-z]//g' >"$tmpfile"
-		whiptail --title "Logi $2" --scrolltext --textbox "$tmpfile" $rws $col
+		whiptail --title "Logi $2" --scrolltext --textbox "$tmpfile" "$rws" "$col"
 		rm "$tmpfile"
 	fi
 }
 
 status_menu() {
 	while :; do
-		local CHOICE=$(whiptail --title "Status kontenerów" --menu "\n  Aktualizacja: kontenery na żywo, watchdog co 5 minut\n\n        Wybierz pozycję aby zobaczyć logi:\n" 17 60 5 \
+		local CHOICE=$(whiptail --title "Status kontenerów" --menu "\n  Aktualizacja: kontenery na żywo, watchdog co 5 minut\n\n        Wybierz pozycję aby zobaczyć logi:\n" 18 60 6 \
 			"1)" "   Nightscout:  $(get_container_status 'ns-server')" \
 			"2)" "  Baza danych:  $(get_container_status 'ns-database')" \
 			"3)" "       Backup:  $(get_container_status 'ns-backup')" \
 			"4)" "     Watchdog:  $(get_watchdog_status "$(get_watchdog_status_code)" "$uni_watchdog_ok")" \
+      "5)" "    Zdarzenia:  $(get_events_status)" \
 			"M)" "Powrót do menu" \
 			--ok-button="Zobacz logi" --cancel-button="$uni_back" \
 			3>&2 2>&1 1>&3)
@@ -1506,6 +1714,10 @@ status_menu() {
 		"4)")
 			show_watchdog_logs
 			;;
+		"5)")
+			okdlg "Zdarzenia" \
+				"$(pad_multiline "$(event_list)")"
+			;;
 		"M)")
 			break
 			;;
@@ -1522,7 +1734,7 @@ version_menu() {
 
 	while :; do
 
-		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+		local ns_tag=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_NIGHTSCOUT_TAG")
 		local versions=()
 
 		while read -r line; do
@@ -1566,9 +1778,10 @@ version_menu() {
 
 			whiptail --title "Zmienić wersję Nightscout?" --yesno --defaultno "Czy na pewno chcesz zmienić wersję z: $ns_tag na: $CHOICE?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}wersję można łatwo zmienić ponownie\n${uni_bullet}dane w bazie danych mogą ulec zmianie i NIE BYĆ kompatybilne" --yes-button "$uni_confirm_ch" --no-button "$uni_resign" 13 73
 			if ! [ $? -eq 1 ]; then
+				event_mark "change_ns_version"
 				docker_compose_down
 				ohai "Changing Nightscout container tag from: $ns_tag to: $CHOICE"
-				dotenv-tool -pmr -i $ENV_FILE_DEP -- "NS_NIGHTSCOUT_TAG=$CHOICE"
+				dotenv-tool -pmr -i "$ENV_FILE_DEP" -- "NS_NIGHTSCOUT_TAG=$CHOICE"
 				docker_compose_update
 				whiptail --title "Zmieniono wersję Nightscout" --msgbox "$(center_multiline 65 \
 					"Zmieniono wersję Nightscout na: $CHOICE" \
@@ -1587,28 +1800,32 @@ version_menu() {
 
 do_cleanup_sys() {
 	ohai "Sprzątanie dziennik systemowego..."
-	journalctl --vacuum-size=50M >>$LOGTO 2>&1
+	event_mark "cleanup"
+	journalctl --vacuum-size=50M >>"$LOGTO" 2>&1
 	ohai "Czyszczenie systemu apt..."
 	msgnote "Ta operacja może TROCHĘ potrwać (od kilku do kilkudziesięciu minut...)"
-	apt-get -y autoremove >>$LOGTO 2>&1 && apt-get -y clean >>$LOGTO 2>&1
+	apt-get -y autoremove >>"$LOGTO" 2>&1 && apt-get -y clean >>"$LOGTO" 2>&1
 	msgcheck "Czyszczenie dziennika i apt zakończono"
 }
 
 do_cleanup_docker() {
 	ohai "Usuwanie nieużywanych obrazów Dockera..."
+	event_mark "cleanup"
 	msgnote "Ta operacja może TROCHĘ potrwać (do kilku minut...)"
-	docker image prune -af >>$LOGTO 2>&1
+	docker image prune -af >>"$LOGTO" 2>&1
 	msgcheck "Czyszczenie Dockera zakończono"
 }
 
 do_cleanup_db() {
 	ohai "Usuwanie kopii zapasowych bazy danych..."
+	event_mark "cleanup"
 	find /srv/nightscout/data/dbbackup ! -type d -delete
 	msgcheck "Czyszczenie kopii zapasowych zakończono"
 }
 
 do_cleanup_container_logs() {
 	ohai "Zatrzymywanie kontenerów..."
+	event_mark "cleanup"
 	docker stop 'ns-server'
 	docker stop 'ns-database'
 	docker stop 'ns-backup'
@@ -1747,16 +1964,19 @@ update_menu() {
 		case $CHOICE in
 		"S)")
 			ohai "Updating package list"
+			event_mark "update_system"
 			dialog --title " Aktualizacja systemu " --infobox "\n  Pobieranie listy pakietów\n  ..... Proszę czekać ....." 6 33
-			apt-get -yq update >>$LOGTO 2>&1
+			apt-get -yq update >>"$LOGTO" 2>&1
 			ohai "Upgrading system"
 			dialog --title " Aktualizacja systemu " --infobox "\n    Instalowanie pakietów\n     ... Proszę czekać ..." 6 33
-			apt-get -yq upgrade >>$LOGTO 2>&1
+			apt-get -yq upgrade >>"$LOGTO" 2>&1
 			;;
 		"N)")
+			event_mark "update_tool"
 			update_if_needed "Wszystkie pliki narzędzia są aktualne"
 			;;
 		"K)")
+			event_mark "update_containers"
 			docker_compose_down
 			docker_compose_update
 			;;
@@ -1774,7 +1994,7 @@ uninstall_menu() {
 	while :; do
 		local extraMenu=()
 		extraMenu+=("A)" "Ustaw adres strony (subdomenę)")
-		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+		local ns_tag=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_NIGHTSCOUT_TAG")
 		local CHOICE=$(whiptail --title "Zmień lub odinstaluj Nightscout" --menu "\n" 17 70 8 \
 			"${extraMenu[@]}" \
 			"W)" "Zmień wersję Nightscouta (bieżąca: $ns_tag)" \
@@ -1803,7 +2023,8 @@ uninstall_menu() {
 			else
 				whiptail --title "Edycja ustawień Nightscout" --yesno "Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO\n\nWskazówki co do obsługi edytora:\n${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O\n${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X\n\n $(printf "\U26A0") Edycja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")" --yes-button "$uni_confirm_ed" --no-button "$uni_resign" 15 68
 				if ! [ $? -eq 1 ]; then
-					nano $ENV_FILE_NS
+					event_mark "edit_env_manual"
+					nano "$ENV_FILE_NS"
 					docker_compose_down
 					docker_compose_update
 				fi
@@ -1812,6 +2033,7 @@ uninstall_menu() {
 		"K)")
 			whiptail --title "Usunąć kontenery?" --yesno --defaultno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
 			if ! [ $? -eq 1 ]; then
+				event_mark "remove_containers"
 				docker_compose_down
 			fi
 			;;
@@ -1821,6 +2043,7 @@ uninstall_menu() {
 				docker_compose_down
 				dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
 				rm -r "${MONGO_DB_DIR:?}/data"
+				event_mark "remove_db_data"
 				docker_compose_update
 			fi
 			;;
@@ -1830,6 +2053,7 @@ uninstall_menu() {
 				docker_compose_down
 				dialog --title " Czyszczenie bazy danych" --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
 				rm -r "${MONGO_DB_DIR:?}/data"
+				event_mark "remove_all_data"
 				dialog --title " Czyszczenie konfiguracji" --infobox "\n    Usuwanie konfiguracji\n   ... Proszę czekać ..." 6 32
 				rm -r "${CONFIG_ROOT_DIR:?}"
 				whiptail --title "Usunięto dane użytkownika" --msgbox "$(center_multiline 65 \
@@ -1851,6 +2075,7 @@ uninstall_menu() {
 				rm "$TOOL_LINK"
 				rm -r "${NIGHTSCOUT_ROOT_DIR:?}/tools"
 				rm -r "${NIGHTSCOUT_ROOT_DIR:?}/updates"
+				event_mark "uninstall"
 				whiptail --title "Odinstalowano" --msgbox "$(center_multiline 65 \
 					"Odinstalowano Nightscout z Mikr.us-a" \
 					"${TL}Aby ponownie zainstalować, postępuj według instrukcji na stronie:" \
@@ -1872,7 +2097,7 @@ uninstall_menu() {
 
 get_td_domain() {
 	local MHOST=$(hostname)
-	local APIKEY=$(dotenv-tool -r get -f $ENV_FILE_ADMIN "MIKRUS_APIKEY")
+	local APIKEY=$(dotenv-tool -r get -f "$ENV_FILE_ADMIN" "MIKRUS_APIKEY")
 	curl -sd "srv=$MHOST&key=$APIKEY" https://api.mikr.us/domain | jq -r ".[].name" | grep ".ns.techdiab.pl" | head -n 1
 }
 
@@ -1897,12 +2122,12 @@ gather_diagnostics() {
 	ohai "Zbieranie diagnostyki"
 
 	local domain=$(get_td_domain)
-	local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+	local ns_tag=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_NIGHTSCOUT_TAG")
 	local mikrus_h=$(hostname)
 
 	local LOG_DIVIDER="======================================================="
 
-	rm -f $SUPPORT_LOG
+	rm -f "$SUPPORT_LOG"
 	rm -f "$SUPPORT_LOG.gz"
 	rm -f "$SUPPORT_LOG.gz.asc"
 
@@ -1912,7 +2137,7 @@ gather_diagnostics() {
 		echo "                 domena : $domain"
 		echo "      wersja nightscout : $ns_tag"
 		echo " wersja nightscout-tool : $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
-	} >$SUPPORT_LOG
+	} >"$SUPPORT_LOG"
 
 	ohai "Zbieranie statusu usług"
 
@@ -1924,7 +2149,7 @@ gather_diagnostics() {
 		echo "  Baza danych:  $(get_container_status 'ns-database')"
 		echo "       Backup:  $(get_container_status 'ns-backup')"
 		echo "     Watchdog:  $(get_watchdog_status "$(get_watchdog_status_code)" "$uni_watchdog_ok")"
-	} >>$SUPPORT_LOG
+	} >>"$SUPPORT_LOG"
 
 	local spaceInfo=$(get_space_info)
 	local remainingTxt=$(echo "$spaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
@@ -1937,17 +2162,25 @@ gather_diagnostics() {
 		echo "$LOG_DIVIDER"
 		echo "  Dostępne: ${remainingTxt}"
 		echo "    Zajęte: ${percTxt} (z ${totalTxt})"
-	} >>$SUPPORT_LOG
+	} >>"$SUPPORT_LOG"
 
-	ohai "Zbieranie logów watchdoga"
+  ohai "Zbieranie zdarzeń"
+	{
+		echo "$LOG_DIVIDER"
+		echo " Zdarzenia"
+		echo "$LOG_DIVIDER"
+    event_list
+	} >>"$SUPPORT_LOG"
+	
+  ohai "Zbieranie logów watchdoga"
 
 	if [[ -f $WATCHDOG_LOG_FILE ]]; then
 		{
 			echo "$LOG_DIVIDER"
 			echo " Watchdog log"
 			echo "$LOG_DIVIDER"
-			timeout -k 15 10 cat $WATCHDOG_LOG_FILE
-		} >>$SUPPORT_LOG
+			timeout -k 15 10 cat "$WATCHDOG_LOG_FILE"
+		} >>"$SUPPORT_LOG"
 	fi
 
 	if [[ -f $WATCHDOG_FAILURES_FILE ]]; then
@@ -1955,8 +2188,8 @@ gather_diagnostics() {
 			echo "$LOG_DIVIDER"
 			echo " Watchdog failures log"
 			echo "$LOG_DIVIDER"
-			timeout -k 15 10 cat $WATCHDOG_FAILURES_FILE
-		} >>$SUPPORT_LOG
+			timeout -k 15 10 cat "$WATCHDOG_FAILURES_FILE"
+		} >>"$SUPPORT_LOG"
 	fi
 
 	ohai "Zbieranie logów usług"
@@ -1965,18 +2198,18 @@ gather_diagnostics() {
 		echo "$LOG_DIVIDER"
 		echo " Nightscout log"
 		echo "$LOG_DIVIDER"
-		timeout -k 15 10 docker logs ns-server --tail "$maxNsLogs" >>$SUPPORT_LOG 2>&1
+		timeout -k 15 10 docker logs ns-server --tail "$maxNsLogs" >>"$SUPPORT_LOG" 2>&1
 		echo "$LOG_DIVIDER"
 		echo " MongoDB database log"
 		echo "$LOG_DIVIDER"
-		timeout -k 15 10 docker logs ns-database --tail "$maxDbLogs" >>$SUPPORT_LOG 2>&1
-	} >>$SUPPORT_LOG
+		timeout -k 15 10 docker logs ns-database --tail "$maxDbLogs" >>"$SUPPORT_LOG" 2>&1
+	} >>"$SUPPORT_LOG"
 
 	ohai "Kompresowanie i szyfrowanie raportu"
 
-	gzip -9 $SUPPORT_LOG
+	gzip -9 "$SUPPORT_LOG"
 
-	local logkey=$(<$LOG_ENCRYPTION_KEY_FILE)
+	local logkey=$(<"$LOG_ENCRYPTION_KEY_FILE")
 
 	gpg --passphrase "$logkey" --batch --quiet --yes -a -c "$SUPPORT_LOG.gz"
 }
@@ -2009,7 +2242,7 @@ send_diagnostics() {
 
 	setup_security
 
-	LOG_KEY=$(<$LOG_ENCRYPTION_KEY_FILE)
+	LOG_KEY=$(<"$LOG_ENCRYPTION_KEY_FILE")
 
 	yesnodlg "Wysyłać diagnostykę?" \
 		"$uni_send" "$uni_resign" \
@@ -2073,7 +2306,7 @@ send_diagnostics() {
 
 main_menu() {
 	while :; do
-		local ns_tag=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_NIGHTSCOUT_TAG")
+		local ns_tag=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_NIGHTSCOUT_TAG")
 		local quickStatus=$(center_text "Strona Nightscout: $(get_watchdog_status "$(get_watchdog_status_code_live)" "$uni_ns_ok")" 55)
 		local quickVersion=$(center_text "Wersja: $ns_tag" 55)
 		local quickDomain=$(center_text "Domena: $(get_domain_status 'ns-server')" 55)
@@ -2095,8 +2328,8 @@ main_menu() {
 			status_menu
 			;;
 		"P)")
-			local ns_external_port=$(dotenv-tool -r get -f $ENV_FILE_DEP "NS_PORT")
-			local ns_api_secret=$(dotenv-tool -r get -f $ENV_FILE_NS "API_SECRET")
+			local ns_external_port=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_PORT")
+			local ns_api_secret=$(dotenv-tool -r get -f "$ENV_FILE_NS" "API_SECRET")
 			whiptail --title "Podgląd konfiguracji Nightscout" --msgbox \
 				"\n   Port usługi Nightscout: $ns_external_port\n               API_SECRET: $ns_api_secret" \
 				10 60
@@ -2151,10 +2384,12 @@ install_or_menu() {
 
 		if [ "$freshInstall" -gt 0 ]; then
 			ohai "Instalowanie Nightscout..."
+			event_mark "install_start"
 			docker_compose_update
 			setup_firewall_for_ns
 			domain_setup
 			# admin_panel_promo
+			event_mark "install_end"
 			setup_done
 		else
 			main_menu
@@ -2237,6 +2472,45 @@ free_space_check() {
 	fi
 }
 
+mail_restart_needed() {
+	local whyRestart="$1"
+	local mikrusSerwer=$(hostname)
+	{
+		echo "🛟 Twój serwer mikr.us z Nightscoutem potrzebuje restartu!"
+		echo " "
+		echo "🐕 Watchdog wykrył awarię której nie jest w stanie automatycznie naprawić:"
+		echo "$whyRestart"
+		echo " "
+		echo "Potrzebna będzie Twoja pomoc z ręcznym restartem serwera:"
+		echo " "
+		echo "1. Zaloguj się do panelu administracyjnego mikrusa"
+		echo "   https://mikr.us/panel/"
+		echo " "
+		echo "2. Znajdź kafelek z nazwą serwera (${mikrusSerwer}) i kliknij na przycisk pod nim:"
+		echo "   【 Restart 】"
+		echo " "
+		echo "3. Potwierdź naciskając przycisk:"
+		echo "   【 Poproszę o restart VPSa 】"
+		echo " "
+		echo "=========================================================="
+		echo " "
+		echo "⏳ Restart serwera potrwa kilka minut, kolejne kilka minut potrwa uruchomienie serwera Nightscout"
+		echo "Jeśli po kilkunastu minutach serwer nie zacznie działać poprawnie:"
+		echo "Zaloguj się do panelu mikr.us-a, zaloguj się do WebSSH i w nightscout-tool sprawdź:"
+		echo "- czy kontenery są uruchomione - ich status i logi"
+		echo "- czy jest dosyć wolnego miejsca"
+		echo "W razie potrzeby - 🔄 zrestartuj kontenery i uruchom 🧹 sprzątanie (ale NIE usuwaj logów!)."
+		echo " "
+		echo "=========================================================="
+		echo " "
+		echo "Jeśli to nie pomoże, poszukaj wsparcia na grupie Technologie Diabetyka"
+		echo "   🙋 https://www.facebook.com/groups/techdiab"
+		echo "i - po uzgodnieniu!!! - wyślij diagnostykę do autora skryptu:"
+		echo "   📜 https://t1d.dzienia.pl/nightscout_mikrus_tutorial/stabilna/5.troubleshooting/#wysyanie-diagnostyki"
+		echo " "
+	} | pusher "🛟_Twoj_serwer_Nightscout_potrzebuje_ręcznego_restartu!"
+}
+
 watchdog_check() {
 	echo "Nightscout Watchdog mode"
 
@@ -2247,14 +2521,14 @@ watchdog_check() {
 
 	if [[ -f $WATCHDOG_TIME_FILE ]]; then
 		echo "Found $WATCHDOG_TIME_FILE"
-		WATCHDOG_LAST_TIME=$(cat $WATCHDOG_TIME_FILE)
+		WATCHDOG_LAST_TIME=$(cat "$WATCHDOG_TIME_FILE")
 	else
 		echo "First watchdog run"
 	fi
 
 	if [[ -f $WATCHDOG_STATUS_FILE ]]; then
 		echo "Found $WATCHDOG_STATUS_FILE"
-		WATCHDOG_LAST_STATUS=$(cat $WATCHDOG_STATUS_FILE)
+		WATCHDOG_LAST_STATUS=$(cat "$WATCHDOG_STATUS_FILE")
 	fi
 
 	local STATUS_AGO=$(dateutils.ddiff "$WATCHDOG_TIME" "$WATCHDOG_LAST_TIME" -f '%S')
@@ -2274,6 +2548,10 @@ watchdog_check() {
 	echo "Database container: $DB_STATUS"
 
 	if [ "$COMBINED_STATUS" = "running running" ]; then
+
+		clear_last_time "docker_down"
+		clear_last_time "server_restart_needed"
+
 		echo "Will check page contents"
 		local domain=$(get_td_domain)
 
@@ -2292,6 +2570,7 @@ watchdog_check() {
 				echo "Nightscout crash detected"
 				WATCHDOG_STATUS="restart"
 				if [ "$WATCHDOG_LAST_STATUS" == "restart_failed" ]; then
+					event_mark "restart_both"
 					echo "Restarting DB first..."
 					docker restart 'ns-database'
 					echo "Then, restarting Nightscout..."
@@ -2300,6 +2579,7 @@ watchdog_check() {
 					WATCHDOG_STATUS="full_restart"
 				else
 					if [ "$WATCHDOG_LAST_STATUS" != "restart" ]; then
+						event_mark "restart_ns"
 						echo "Restarting only Nightscout..."
 						docker restart 'ns-server'
 						echo "...done"
@@ -2336,37 +2616,58 @@ watchdog_check() {
 			WATCHDOG_STATUS="awaiting"
 		else
 			WATCHDOG_STATUS="not_running"
+
+			local logSample=$(timeout -k 15 10 docker logs ns-server --tail "10" 2>&1)
+			local regexSample='Cannot connect to the Docker daemon'
+			if [[ "$logSample" =~ $regexSample ]]; then
+				WATCHDOG_STATUS="docker_down"
+				if [ "$WATCHDOG_LAST_STATUS" != "docker_down" ]; then
+					echo "Cannot connect to Docker, will restart service..."
+					set_last_time "docker_down"
+					sudo systemctl restart docker
+				else
+					echo "Cannot connect to Docker, and service cannot be restarted"
+					local lastCalled=$(get_since_last_time "server_restart_needed")
+					if ((lastCalled == -1)) || ((lastCalled > DOCKER_DOWN_MAIL)); then
+						set_last_time "server_restart_needed"
+						echo "Sending mail to user - manual server restart needed"
+						mail_restart_needed "Usługa Docker uległa awarii i nie można automatycznie jej uruchomić"
+					else
+						echo "Mail for manual restart already recently sent"
+					fi
+				fi
+			fi
 		fi
 	fi
 
 	echo "Watchdog observation: $WATCHDOG_STATUS"
 
 	# if [ "$WATCHDOG_LAST_STATUS" != "$WATCHDOG_STATUS" ]; then
-	echo "$WATCHDOG_TIME [$WATCHDOG_STATUS]" >>$WATCHDOG_LOG_FILE
-	LOGSIZE=$(wc -l <$WATCHDOG_LOG_FILE)
+	echo "$WATCHDOG_TIME [$WATCHDOG_STATUS]" >>"$WATCHDOG_LOG_FILE"
+	LOGSIZE=$(wc -l <"$WATCHDOG_LOG_FILE")
 	if [ "$LOGSIZE" -gt 1000 ]; then
-		tail -1000 $WATCHDOG_LOG_FILE >"$WATCHDOG_LOG_FILE.tmp"
+		tail -1000 "$WATCHDOG_LOG_FILE" >"$WATCHDOG_LOG_FILE.tmp"
 		mv -f "$WATCHDOG_LOG_FILE.tmp" "$WATCHDOG_LOG_FILE"
 	fi
 	# fi
 
 	if [[ -f $WATCHDOG_FAILURES_FILE ]]; then
-		FAILSIZE=$(wc -l <$WATCHDOG_FAILURES_FILE)
+		FAILSIZE=$(wc -l <"$WATCHDOG_FAILURES_FILE")
 		if [ "$FAILSIZE" -gt 10000 ]; then
-			tail -10000 $WATCHDOG_FAILURES_FILE >"$WATCHDOG_FAILURES_FILE.tmp"
+			tail -10000 "$WATCHDOG_FAILURES_FILE" >"$WATCHDOG_FAILURES_FILE.tmp"
 			mv -f "$WATCHDOG_FAILURES_FILE.tmp" "$WATCHDOG_FAILURES_FILE"
 		fi
 	fi
 
-	echo "$WATCHDOG_TIME" >$WATCHDOG_TIME_FILE
-	echo "$WATCHDOG_STATUS" >$WATCHDOG_STATUS_FILE
+	echo "$WATCHDOG_TIME" >"$WATCHDOG_TIME_FILE"
+	echo "$WATCHDOG_STATUS" >"$WATCHDOG_STATUS_FILE"
 
 	exit 0
 }
 
 load_update_channel() {
 	if [[ -f $UPDATE_CHANNEL_FILE ]]; then
-		UPDATE_CHANNEL=$(cat $UPDATE_CHANNEL_FILE)
+		UPDATE_CHANNEL=$(cat "$UPDATE_CHANNEL_FILE")
 		msgok "Loaded update channel: $UPDATE_CHANNEL"
 	fi
 }
@@ -2406,13 +2707,13 @@ parse_commandline_args() {
 		-d | --develop)
 			warn "Switching to DEVELOP update channel"
 			UPDATE_CHANNEL=develop
-			echo "$UPDATE_CHANNEL" >$UPDATE_CHANNEL_FILE
+			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
 			shift
 			;;
 		-p | --production)
 			warn "Switching to PRODUCTION update channel"
 			UPDATE_CHANNEL=master
-			echo "$UPDATE_CHANNEL" >$UPDATE_CHANNEL_FILE
+			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
 			shift
 			;;
 		-c | --channel)
@@ -2426,7 +2727,7 @@ parse_commandline_args() {
 
 			warn "Switching to $UPDATE_CHANNEL_CANDIDATE update channel"
 			UPDATE_CHANNEL="$UPDATE_CHANNEL_CANDIDATE"
-			echo "$UPDATE_CHANNEL" >$UPDATE_CHANNEL_FILE
+			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
 			shift
 			;;
 		--)

@@ -37,7 +37,7 @@ DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
 SCRIPT_VERSION="1.9.1"          #auto-update
-SCRIPT_BUILD_TIME="2024.10.18"  #auto-update
+SCRIPT_BUILD_TIME="2024.10.19"  #auto-update
 
 #=======================================
 # SETUP
@@ -262,7 +262,7 @@ event_label() {
 	update_system)
 		echo "Aktualizacja systemu"
 		;;
-	update_tools)
+	update_tool)
 		echo "Aktualizacja narzędzia"
 		;;
 	update_containers)
@@ -314,7 +314,11 @@ lpad_text() {
 	local inText="$1"
 	local len=${#inText}
 	local spaces="                                                                      "
-	echo "${spaces:0:$(($2 - len))}$1"
+	if ((len == 0)); then
+		echo ""
+	else
+		echo "${spaces:0:$(($2 - len))}$1"
+	fi
 }
 
 event_count() {
@@ -326,11 +330,11 @@ event_count() {
 		local eventsCount=${#eventsKeysStr}
 		if ((eventsCount > 0)); then
 			mapfile -t eventList < <(echo "${eventsKeysStr}")
-      echo "${#eventList}"
-    else
-      echo "0"
-    fi
-  fi 
+			echo "${#eventList[@]}"
+		else
+			echo "0"
+		fi
+	fi
 }
 
 event_list() {
@@ -365,6 +369,11 @@ event_list() {
 						local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_end")
 						local joinedVar="od: $startVar do: $endVar"
 						local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|do): null ?//g")
+						if [[ "$fixedVar" =~ od: ]] && [[ "$fixedVar" =~ do: ]]; then
+							fixedVar=$(echo "$fixedVar" | sed -E -e "s/do:/\ndo:/g")
+						fi
+						fixedVar=$(echo "$fixedVar" | sed -E -e "s/od:/🕓/g")
+						fixedVar=$(echo "$fixedVar" | sed -E -e "s/do:/✅/g")
 						valuesTab+=("$fixedVar")
 					fi
 				else
@@ -375,12 +384,17 @@ event_list() {
 							local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_clear")
 							local joinedVar="od: $startVar zdjęto: $endVar"
 							local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|zdjęto): null ?//g")
+							if [[ "$fixedVar" =~ od: ]] && [[ "$fixedVar" =~ zdjęto: ]]; then
+								fixedVar=$(echo "$fixedVar" | sed -E -e "s/zdjęto:/\nzdjęto:/g")
+							fi
+							fixedVar=$(echo "$fixedVar" | sed -E -e "s/od:/🚩/g")
+							fixedVar=$(echo "$fixedVar" | sed -E -e "s/zdjęto:/🏁/g")
 							valuesTab+=("$fixedVar")
 						fi
 					else
 						namesTab+=("${eventId}")
 						local exactVar=$(echo "$eventsJSON" | jq -r ".values.${eventId}")
-						valuesTab+=("$exactVar")
+						valuesTab+=("🕓 $exactVar")
 					fi
 				fi
 			done
@@ -397,7 +411,17 @@ event_list() {
 			maxLen=$((maxLen + 1))
 
 			for ((i = 0; i < ${#namesTab[@]}; i++)); do
-				echo "$(lpad_text "${labelsTab[$i]}" "$maxLen") = ${valuesTab[$i]}"
+				mapfile -t valuesLines <<<"${valuesTab[$i]}"
+				local linesCount=${#valuesLines[@]}
+				if ((linesCount > 1)); then
+					local spaces="                                                                      "
+					echo "$(lpad_text "${labelsTab[$i]}" "$maxLen") = ${valuesLines[0]}"
+					for ((l = 1; l < linesCount; l++)); do
+						echo "${spaces:0:$((maxLen + 3))}${valuesLines[l]}"
+					done
+				else
+					echo "$(lpad_text "${labelsTab[$i]}" "$maxLen") = ${valuesTab[$i]}"
+				fi
 			done
 		else
 			echo "Nie odnotowano zdarzeń"
@@ -487,15 +511,24 @@ download_if_not_exists() {
 center_text() {
 	local inText="$1"
 	local len=${#inText}
-	local spaces="                                                                      "
-	echo "${spaces:0:$((($2 - len) / 2))}$1"
+	local spaces="                                                                                                     "
+	if ((len == 0)); then
+		echo ""
+	else
+		echo "${spaces:0:$((($2 - len) / 2))}$1"
+	fi
 }
 
 rpad_text() {
 	local inText="$1"
 	local len=${#inText}
-	local spaces="                                                                                     "
-	echo "$1${spaces:0:$(($2 - len))}"
+	local spaces="                                                                                                     "
+	if ((len == 0)); then
+		echo ""
+	else
+		local padSize=$(($2 - len))
+		echo "$1${spaces:0:${padSize}}"
+	fi
 }
 
 multiline_length() {
@@ -536,6 +569,7 @@ center_multiline() {
 }
 
 pad_multiline() {
+
 	local string="$*"
 	local maxLen=$(multiline_length "$string")
 
@@ -1615,16 +1649,16 @@ show_watchdog_logs() {
 }
 
 get_events_status() {
-  local count="$(event_count)"
-  if (( count == 0 )); then
-    printf "\U2728 brak zdarzeń"
-  elif (( count == 1 )); then
-    printf "\U1F4C5 jedno zdarzenie"
-  elif (( (count % 10) > 1)) && (( (count % 10) < 5)); then
-    printf "\U1F4C5 %s zdarzenia" "$count"
-  else
-    printf "\U1F4C5 %s zdarzeń" "$count"
-  fi
+	local count="$(event_count)"
+	if ((count == 0)); then
+		printf "\U2728 brak zdarzeń"
+	elif ((count == 1)); then
+		printf "\U1F4C5 jedno zdarzenie"
+	elif (((count % 10) > 1)) && (((count % 10) < 5)); then
+		printf "\U1F4C5 %s zdarzenia" "$count"
+	else
+		printf "\U1F4C5 %s zdarzeń" "$count"
+	fi
 }
 
 get_container_status() {
@@ -1696,7 +1730,7 @@ status_menu() {
 			"2)" "  Baza danych:  $(get_container_status 'ns-database')" \
 			"3)" "       Backup:  $(get_container_status 'ns-backup')" \
 			"4)" "     Watchdog:  $(get_watchdog_status "$(get_watchdog_status_code)" "$uni_watchdog_ok")" \
-      "5)" "    Zdarzenia:  $(get_events_status)" \
+			"5)" "    Zdarzenia:  $(get_events_status)" \
 			"M)" "Powrót do menu" \
 			--ok-button="Zobacz logi" --cancel-button="$uni_back" \
 			3>&2 2>&1 1>&3)
@@ -1893,10 +1927,11 @@ cleanup_menu() {
 			noyesdlg "Posprzątać wszystko?" "$uni_confirm_del" "$uni_resign" \
 				"Czy chcesz posprzątać i usunąć:" \
 				"$(pad_multiline \
-					"${NL}${uni_bullet}nieużywane pliki apt i dziennika" \
+					"${TL}${uni_bullet}nieużywane pliki apt i dziennika" \
 					"${NL}${uni_bullet}nieużywane obrazy Dockera" \
-					"${NL} ${uni_bullet}kopie zapasowe bazy danych")" \
-				"${TL}(ta operacja może potrwać od kilku do kilkudziesięciu minut)"
+					"${NL}${uni_bullet}kopie zapasowe bazy danych" \
+					"${NL}${uni_bullet}opcjonalnie - logi Nightscouta i bazy")${NL}" \
+				"${TL}(☕ to może potrwać nawet kilkadziesiąt minut)"
 			if ! [ $? -eq 1 ]; then
 				prompt_cleanup_container_logs
 				if ! [ $? -eq 1 ]; then
@@ -1913,8 +1948,8 @@ cleanup_menu() {
 			;;
 		"S)")
 			noyesdlg "Posprzątać zasoby systemowe?" "$uni_confirm_del" "$uni_resign" \
-				"Czy chcesz usunąć nieużywane pakiety apt i poprzątać dziennik systemowy?" \
-				"${TL}(ta operacja może potrwać od kilku do kilkudziesięciu minut)"
+				"Czy chcesz usunąć nieużywane pakiety apt${NL}i poprzątać dziennik systemowy?" \
+				"${TL}(☕ to może potrwać nawet kilkadziesiąt minut)"
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_sys
 			fi
@@ -1922,7 +1957,7 @@ cleanup_menu() {
 		"D)")
 			noyesdlg "Posprzątać obrazy Dockera?" "$uni_confirm_del" "$uni_resign" \
 				"Czy chcesz usunąć nieużywane obrazy Dockera?" \
-				"${TL}(ta operacja może potrwać kilka minut)"
+				"${TL}(☕ to może potrwać kilka minut)"
 			if ! [ $? -eq 1 ]; then
 				do_cleanup_docker
 			fi
@@ -2164,15 +2199,15 @@ gather_diagnostics() {
 		echo "    Zajęte: ${percTxt} (z ${totalTxt})"
 	} >>"$SUPPORT_LOG"
 
-  ohai "Zbieranie zdarzeń"
+	ohai "Zbieranie zdarzeń"
 	{
 		echo "$LOG_DIVIDER"
 		echo " Zdarzenia"
 		echo "$LOG_DIVIDER"
-    event_list
+		event_list
 	} >>"$SUPPORT_LOG"
-	
-  ohai "Zbieranie logów watchdoga"
+
+	ohai "Zbieranie logów watchdoga"
 
 	if [[ -f $WATCHDOG_LOG_FILE ]]; then
 		{

@@ -1085,7 +1085,7 @@ update_if_needed() {
 		if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ]; then
 			msgok "Scripts and config files are up to date"
 			if [ $# -eq 1 ]; then
-				whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
+				okdlg "Aktualizacja skryptów" "$1"
 			fi
 		else
 			ohai "Updating scripts and config files"
@@ -1139,16 +1139,25 @@ update_if_needed() {
 
 			if [ "$changed" -eq 0 ]; then
 				if [ $# -eq 1 ]; then
-					whiptail --title "Aktualizacja skryptów" --msgbox "$1" 7 50
+          okdlg "Aktualizacja skryptów" "$1"
 				fi
 			else
 				local okTxt=""
 				if [ "$redeploy" -gt 0 ]; then
-					okTxt="${TL}${uni_warn} Aktualizacja spowoduje też restart i aktualizację kontenerów ${uni_warn}"
+					okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
 				fi
 
-				whiptail --title "Aktualizacja skryptów" --yesno "Zalecana jest aktualizacja plików:\n\n${uni_bullet}Skrypt instalacyjny:      $msgInst \n${uni_bullet}Konfiguracja deploymentu: $msgDep\n${uni_bullet}Konfiguracja Nightscout:  $msgNs \n${uni_bullet}Kompozycja usług:         $msgComp $okTxt" \
-					--yes-button "$uni_confirm_upd" --no-button "$uni_resign" 15 70
+				yesnodlg "Aktualizacja skryptów" "$uni_confirm_upd" "$uni_resign" \
+					"Zalecana jest aktualizacja plików:" \
+					"$(
+						pad_multiline \
+							"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
+							"${NL}${uni_bullet}Konfiguracja deploymentu: $msgDep" \
+							"${NL}${uni_bullet}Konfiguracja Nightscout:  $msgNs" \
+							"${NL}${uni_bullet}Kompozycja usług:         $msgComp${NL}"
+					)" \
+					"$okTxt"
+
 				if ! [ $? -eq 1 ]; then
 					if [ "$redeploy" -gt 0 ]; then
 						docker_compose_down
@@ -1174,7 +1183,7 @@ update_if_needed() {
 					if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
 						ohai "Updating $TOOL_FILE"
 						cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
-						whiptail --title "Aktualizacja zakończona" --msgbox "Narzędzie zostanie uruchomione ponownie" 7 50
+            okdlg "Aktualizacja zakończona" "Narzędzie zostanie uruchomione ponownie"
 						ohai "Restarting tool"
 						exec "$TOOL_FILE"
 					fi
@@ -2196,7 +2205,7 @@ uninstall_menu() {
 				okdlg "Odinstalowano" \
 					"Odinstalowano Nightscout z Mikr.us-a" \
 					"${TL}Aby ponownie zainstalować, postępuj według instrukcji na stronie:" \
-					"${NL}https://t1d.dzienia.pl/mikrus" \
+					"${NL}https://t1d.dzienia.pl/nightscout_mikrus_tutorial" \
 					"${TL}Dziękujemy i do zobaczenia!"
 
 				exit 0

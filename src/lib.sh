@@ -37,7 +37,7 @@ DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
 SCRIPT_VERSION="1.9.1"          #auto-update
-SCRIPT_BUILD_TIME="2024.10.19"  #auto-update
+SCRIPT_BUILD_TIME="2024.10.20"  #auto-update
 
 #=======================================
 # SETUP
@@ -135,6 +135,7 @@ emoji_note="\U1F4A1"
 uni_bullet="  $(printf '\u2022') "
 uni_copyright="$(printf '\uA9\uFE0F')"
 uni_bullet_pad="    "
+uni_warn="$(printf "\U26A0")"
 
 uni_exit=" $(printf '\U274C') Wyjdź "
 uni_start=" $(printf '\U1F984') Zaczynamy "
@@ -1127,7 +1128,7 @@ update_if_needed() {
 			else
 				local okTxt=""
 				if [ "$redeploy" -gt 0 ]; then
-					okTxt="\n\n $(printf "\U26A0") Aktualizacja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")"
+					okTxt="${TL}${uni_warn} Aktualizacja spowoduje też restart i aktualizację kontenerów ${uni_warn}"
 				fi
 
 				whiptail --title "Aktualizacja skryptów" --yesno "Zalecana jest aktualizacja plików:\n\n${uni_bullet}Skrypt instalacyjny:      $msgInst \n${uni_bullet}Konfiguracja deploymentu: $msgDep\n${uni_bullet}Konfiguracja Nightscout:  $msgNs \n${uni_bullet}Kompozycja usług:         $msgComp $okTxt" \
@@ -1874,6 +1875,28 @@ do_cleanup_container_logs() {
 	msgok "Logi usunięte"
 }
 
+do_cleanup_diagnostics() {
+	ohai "Sprzątanie diagnostyki"
+	rm -f "$SUPPORT_LOG"
+	rm -f "$SUPPORT_LOG.gz"
+	rm -f "$SUPPORT_LOG.gz.asc"
+}
+
+do_cleanup_app_state() {
+	ohai "Sprzątanie stanu aplikacji"
+	rm -f "$UPDATE_CHANNEL_FILE"
+	rm -f "$EVENTS_DB"
+}
+
+do_cleanup_app_logs() {
+	ohai "Sprzątanie logów aplikacji"
+	rm -f "$WATCHDOG_STATUS_FILE"
+	rm -f "$WATCHDOG_TIME_FILE"
+	rm -f "$WATCHDOG_LOG_FILE"
+	rm -f "$WATCHDOG_FAILURES_FILE"
+	rm -f "$WATCHDOG_CRON_LOG"
+}
+
 prompt_cleanup_container_logs() {
 	yesnodlg "Usunąć logi kontenerów?" "$uni_delete" "$uni_leave_logs" \
 		"Czy chcesz usunąć logi kontenerów nightscout i bazy?" \
@@ -2056,7 +2079,14 @@ uninstall_menu() {
 					"Edytor ustawień dostępny po uruchomieniu narzędzia komendą:" \
 					"${TL}nightscout-tool"
 			else
-				whiptail --title "Edycja ustawień Nightscout" --yesno "Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO\n\nWskazówki co do obsługi edytora:\n${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O\n${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X\n\n $(printf "\U26A0") Edycja spowoduje też restart i aktualizację kontenerów $(printf "\U26A0")" --yes-button "$uni_confirm_ed" --no-button "$uni_resign" 15 68
+				yesnodlg "Edycja ustawień Nightscout" "$uni_confirm_ed" "$uni_resign" \
+					"Za chwilę otworzę plik konfiguracji Nightscout w edytorze NANO" \
+					"$(pad_multiline \
+						"${TL}Wskazówki co do obsługi edytora:" \
+						"${NL}${uni_bullet}Aby ZAPISAĆ zmiany naciśnij Ctrl+O" \
+						"${NL}${uni_bullet}Aby ZAKOŃCZYĆ edycję naciśnij Ctrl+X")" \
+					"${TL}${uni_warn} Edycja spowoduje też restart i aktualizację kontenerów ${uni_warn}"
+
 				if ! [ $? -eq 1 ]; then
 					event_mark "edit_env_manual"
 					nano "$ENV_FILE_NS"
@@ -2066,14 +2096,26 @@ uninstall_menu() {
 			fi
 			;;
 		"K)")
-			whiptail --title "Usunąć kontenery?" --yesno --defaultno "Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?\n\n${uni_bullet}dane i konfiguracja NIE SĄ usuwane\n${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 11 73
+			noyesdlg "Usunąć kontenery?" "$uni_confirm_del" "$uni_resign" \
+				"Czy na pewno chcesz usunąć kontenery powiązane z Nightscout?" \
+				"$(pad_multiline \
+					"${TL}${uni_bullet}dane i konfiguracja NIE SĄ usuwane" \
+					"${NL}${uni_bullet}kontenery można łatwo odzyskać (opcja Aktualizuj kontenery)")"
+
 			if ! [ $? -eq 1 ]; then
 				event_mark "remove_containers"
 				docker_compose_down
 			fi
 			;;
 		"B)")
-			whiptail --title "Usunąć dane z bazy danych?" --yesno --defaultno "Czy na pewno chcesz usunąć dane z bazy danych?\n\n${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta\n${uni_bullet}usunięte zostaną wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
+			noyesdlg "Usunąć dane z bazy danych?" "$uni_confirm_del" "$uni_resign" \
+				"Czy na pewno chcesz usunąć dane z bazy danych?" \
+				"$(pad_multiline \
+					"${TL}${uni_bullet}konfiguracja serwera NIE ZOSTANIE usunięta" \
+					"${NL}${uni_bullet}usunięte zostaną wszystkie dane użytkownika" \
+					"${NL}${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)" \
+					"${NL}${uni_bullet}kontenery zostaną zatrzymane i uruchomione ponownie (zaktualizowane)")"
+
 			if ! [ $? -eq 1 ]; then
 				docker_compose_down
 				dialog --title " Czyszczenie bazy danych " --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
@@ -2083,7 +2125,14 @@ uninstall_menu() {
 			fi
 			;;
 		"D)")
-			whiptail --title "Usunąć wszystkie dane?" --yesno --defaultno "Czy na pewno chcesz usunąć wszystkie dane i konfigurację?\n\n${uni_bullet}konfigurację panelu, ustawienia Nightscout\n${uni_bullet}wszystkie dane użytkownika\n${uni_bullet_pad}  (m.in. historia glikemii, wpisy, notatki, pomiary, profile)\n${uni_bullet}kontenery zostaną zatrzymane" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 13 78
+			noyesdlg "Usunąć wszystkie dane?" "$uni_confirm_del" "$uni_resign" \
+				"Czy na pewno chcesz usunąć wszystkie dane i konfigurację?" \
+				"$(pad_multiline \
+					"${TL}${uni_bullet}konfigurację panelu, ustawienia Nightscout" \
+					"${NL}${uni_bullet}wszystkie dane użytkownika" \
+					"${NL}${uni_bullet_pad}(m.in. glikemia, wpisy, notatki, pomiary, profile)" \
+					"${NL}${uni_bullet}kontenery zostaną zatrzymane")"
+
 			if ! [ $? -eq 1 ]; then
 				docker_compose_down
 				dialog --title " Czyszczenie bazy danych" --infobox "\n    Usuwanie plików bazy\n   ... Proszę czekać ..." 6 32
@@ -2091,16 +2140,29 @@ uninstall_menu() {
 				event_mark "remove_all_data"
 				dialog --title " Czyszczenie konfiguracji" --infobox "\n    Usuwanie konfiguracji\n   ... Proszę czekać ..." 6 32
 				rm -r "${CONFIG_ROOT_DIR:?}"
-				whiptail --title "Usunięto dane użytkownika" --msgbox "$(center_multiline 65 \
+				do_cleanup_diagnostics
+				do_cleanup_app_logs
+
+				okdlg "Usunięto dane użytkownika" \
 					"Usunęto dane użytkwnika i konfigurację." \
 					"${TL}Aby zainstalować Nightscout od zera:" \
-					"${NL}uruchom ponownie skrypt i podaj konfigurację")" \
-					11 70
+					"${NL}uruchom ponownie skrypt i podaj konfigurację"
+
 				exit 0
 			fi
 			;;
 		"U)")
-			whiptail --title "Odinstalować?" --yesno --defaultno "Czy na pewno chcesz usunąć wszystko?\n${uni_bullet}konfigurację panelu, ustawienia Nightscout\n${uni_bullet}wszystkie dane użytkownika (glikemia, status, profile)\n${uni_bullet}kontenery, skrypt nightscout-tool\n\nNIE ZOSTANĄ USUNIĘTE/ODINSTALOWANE:\n${uni_bullet}użytkownik mongo db, firewall, doinstalowane pakiety\n${uni_bullet}kopie zapasowe bazy danych" --yes-button "$uni_confirm_del" --no-button "$uni_resign" 16 78
+			noyesdlg "Odinstalować?" "$uni_confirm_del" "$uni_resign" \
+				"Czy na pewno chcesz usunąć wszystko?" \
+				"$(pad_multiline \
+					"${TL}${uni_bullet}konfigurację panelu, ustawienia Nightscout" \
+					"${NL}${uni_bullet}wszystkie dane użytkownika (glikemia, status, profile)" \
+					"${NL}${uni_bullet}kontenery, skrypt nightscout-tool")" \
+				"${TL}NIE ZOSTANĄ USUNIĘTE/ODINSTALOWANE:" \
+				"$(pad_multiline \
+					"${TL}${uni_bullet}użytkownik mongo db, firewall, doinstalowane pakiety" \
+					"${NL}${uni_bullet}kopie zapasowe bazy danych")"
+
 			if ! [ $? -eq 1 ]; then
 				docker_compose_down
 				dialog --title " Odinstalowanie" --infobox "\n      Usuwanie plików\n   ... Proszę czekać ..." 6 32
@@ -2110,13 +2172,17 @@ uninstall_menu() {
 				rm "$TOOL_LINK"
 				rm -r "${NIGHTSCOUT_ROOT_DIR:?}/tools"
 				rm -r "${NIGHTSCOUT_ROOT_DIR:?}/updates"
+				do_cleanup_diagnostics
+				do_cleanup_app_logs
+				do_cleanup_app_state
 				event_mark "uninstall"
-				whiptail --title "Odinstalowano" --msgbox "$(center_multiline 65 \
+
+				okdlg "Odinstalowano" \
 					"Odinstalowano Nightscout z Mikr.us-a" \
 					"${TL}Aby ponownie zainstalować, postępuj według instrukcji na stronie:" \
 					"${NL}https://t1d.dzienia.pl/mikrus" \
-					"${TL}Dziękujemy i do zobaczenia!")" \
-					13 70
+					"${TL}Dziękujemy i do zobaczenia!"
+
 				exit 0
 			fi
 			;;
@@ -2154,6 +2220,8 @@ gather_diagnostics() {
 
 	diagnosticsSizeOk=0
 
+	do_cleanup_diagnostics
+
 	ohai "Zbieranie diagnostyki"
 
 	local domain=$(get_td_domain)
@@ -2161,10 +2229,6 @@ gather_diagnostics() {
 	local mikrus_h=$(hostname)
 
 	local LOG_DIVIDER="======================================================="
-
-	rm -f "$SUPPORT_LOG"
-	rm -f "$SUPPORT_LOG.gz"
-	rm -f "$SUPPORT_LOG.gz.asc"
 
 	{
 		echo "Dane diagnostyczne zebrane $curr_time"
@@ -2323,6 +2387,7 @@ send_diagnostics() {
 
 		local regexEm='Email sent'
 		if [[ "$sentStatus" =~ $regexEm ]]; then
+			do_cleanup_diagnostics
 			msgcheck "Mail wysłany!"
 			okdlg "Diagnostyka wysłana" \
 				"Sprawdź swoją skrzynkę pocztową,\n" \

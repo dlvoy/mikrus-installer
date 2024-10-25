@@ -1113,7 +1113,7 @@ download_if_needed() {
 	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
 	local timestampNow=$(date +%s)
 	local updateCheck=$UPDATE_CHECK
-	if (((timestampNow - lastCheck) > updateCheck)) || [ "$lastDownload" == "" ] || [ "$lastDownload" == "error" ] || ((forceUpdateCheck == 1)); then
+	if (((timestampNow - lastCheck) > updateCheck)) || [ "$lastDownload" == "" ] || [ "$lastDownload" == "error" ] || ((forceUpdateCheck == 1)) || [ $# -eq 1 ]; then
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."
 		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
@@ -1163,8 +1163,8 @@ update_background_check() {
 }
 
 update_if_needed() {
-
-	download_if_needed
+   
+	download_if_needed "$@"
 
 	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "???")
 	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")

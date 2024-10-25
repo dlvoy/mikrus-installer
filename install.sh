@@ -1188,7 +1188,7 @@ update_if_needed() {
 		local msgNs="$(printf "\U1F7E2") $nsEnvLocalVer"
 		local msgComp="$(printf "\U1F7E2") $compLocalVer"
 
-		if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$onlineUpdated" == "$lastUpdate" ]; then
+		if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
 			changed=$((changed + 1))
 			msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
 		fi
@@ -1257,7 +1257,7 @@ update_if_needed() {
 
 				echo "$onlineUpdated" >"$UPDATES_DIR/updated"
 
-				if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$onlineUpdated" == "$lastUpdate" ]; then
+				if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
 					ohai "Updating $TOOL_FILE"
 					cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
 					okdlg "Aktualizacja zakończona" "Narzędzie zostanie uruchomione ponownie"

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2024-10-26
+
+### Added
+
+- Detecting and fixing docker server issues
+- Additional cleanup of container logs
+- Events added to logs and diagnostics
+- Mail notification on possible update
+- Build date shown in UI, logs and diagnostics
+- Forced update flag
+- Gracefull handling of repo 404 and invalid channels
+
+### Changed
+
+- Tool update mechanism taking into account build date
+
+### Fixed
+
+- Cleanups and refactoring in dialogs
+- Bugs in update detection
+
 ## [1.9.0] - 2024-10-12
 
 ### Added

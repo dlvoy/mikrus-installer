@@ -268,9 +268,6 @@ event_label() {
 	update_tool)
 		echo "Aktualizacja narzędzia"
 		;;
-	update_needed)
-		echo "Potrzebna aktualizacja"
-		;;
 	update_containers)
 		echo "Aktualizacja kontenerów"
 		;;
@@ -309,6 +306,9 @@ event_label() {
 		;;
 	last_server_restart_needed)
 		echo "Potrzebny restart serwera"
+		;;
+	last_update_needed)
+		echo "Potrzebna aktualizacja"
 		;;
 	*)
 		echo "$1"
@@ -1127,8 +1127,8 @@ update_background_check() {
 			{
 				echo "✨ Na Twoim serwerze mikr.us z Nightscoutem można zaktualizować narzędzie nightscout-tool!"
 				echo " "
-				echo "🐕 Watchdog wykrył że dostępna jest aktualizacja nightscout-tool,"
-				echo "a u Ciebie zainstalowana jest jeszcze starsza wersja."
+				echo "🐕 Watchdog wykrył że dostępna jest nowa aktualizacja nightscout-tool."
+				echo "Na Twoim serwerze zainstalowana jest starsza wersja narzędzia - zaktualizuj go by poprawić stabilność systemu i uzyskać dostęp do nowych funkcji."
 				echo " "
 				echo "Aby zaktualizować narzędzie:"
 				echo " "

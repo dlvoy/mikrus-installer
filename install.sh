@@ -1081,7 +1081,7 @@ extract_version() {
 }
 
 read_or_default() {
-	if [ -f $1 ]; then
+	if [ -f "$1" ]; then
 		cat "$1"
 	else
 		if [ $# -eq 2 ]; then
@@ -1104,20 +1104,20 @@ download_updates() {
 
 download_if_needed() {
 	local lastCheck=$(read_or_default "$UPDATES_DIR/timestamp")
+	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
 	local timestampNow=$(date +%s)
 	local updateCheck=$UPDATE_CHECK
-  if (((timestampNow - lastCheck) > updateCheck)) || [ $# -eq 1 ] || (( forceUpdateCheck == 1 )); then
+	if (((timestampNow - lastCheck) > updateCheck)) || [ "$lastDownload" == "" ] || ((forceUpdateCheck == 1)); then
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."
 		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
 		local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded")
-    if [ "$onlineUpdated" == "$lastDownload" ] && (( forceUpdateCheck == 0 )); then
+		if [ "$onlineUpdated" == "$lastDownload" ] && ((forceUpdateCheck == 0)); then
 			msgok "Latest update already downloaded"
 		else
 			echo "$onlineUpdated" >"$UPDATES_DIR/downloaded"
 			download_updates
 		fi
-
 	else
 		msgok "Too soon to download update, skipping..."
 	fi
@@ -1139,7 +1139,7 @@ update_background_check() {
 				echo "✨ Na Twoim serwerze mikr.us z Nightscoutem można zaktualizować narzędzie nightscout-tool!"
 				echo " "
 				echo "🐕 Watchdog wykrył że dostępna jest aktualizacja nightscout-tool,"
-        echo "a u Ciebie zainstalowana jest jeszcze starsza wersja."
+				echo "a u Ciebie zainstalowana jest jeszcze starsza wersja."
 				echo " "
 				echo "Aby zaktualizować narzędzie:"
 				echo " "
@@ -1151,7 +1151,7 @@ update_background_check() {
 				echo " "
 				echo "3. Potwierdź naciskając przycisk:"
 				echo "   【 Aktualizacja 】"
-        echo " "
+				echo " "
 			} | pusher "✨_Na_Twoim_serwerze_Nightscout_dostępna_jest_aktualizacja"
 		fi
 	fi
@@ -1164,7 +1164,7 @@ update_if_needed() {
 	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "???")
 	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 
-  if [ "$lastDownload" == "$updateInstalled" ] && (( forceUpdateCheck == 0 )) && [ $# -eq 0 ]; then
+	if [ "$lastDownload" == "$updateInstalled" ] && ((forceUpdateCheck == 0)) && [ $# -eq 0 ]; then
 		msgok "Scripts and config files are up to date"
 	else
 
@@ -1211,7 +1211,7 @@ update_if_needed() {
 
 		if [ "$changed" -eq 0 ]; then
 			if [ $# -eq 1 ]; then
-		    msgok "Scripts and config files are up to date"
+				msgok "Scripts and config files are up to date"
 				okdlg "Aktualizacja skryptów" "$1"
 			fi
 		else
@@ -1220,10 +1220,10 @@ update_if_needed() {
 				okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
 			fi
 
-      local versionMsg="${TL}Build: ${updateInstalled}"
-      if [ ! "$lastDownload" == "$updateInstalled" ]; then
-        versionMsg="$(pad_multiline "${TL}Masz build: ${updateInstalled}${NL}  Dostępny: ${lastDownload}")"
-      fi
+			local versionMsg="${TL}Build: ${updateInstalled}"
+			if [ ! "$lastDownload" == "$updateInstalled" ]; then
+				versionMsg="$(pad_multiline "${TL}Masz build: ${updateInstalled}${NL}  Dostępny: ${lastDownload}")"
+			fi
 
 			yesnodlg "Aktualizacja skryptów" "$uni_confirm_upd" "$uni_resign" \
 				"Zalecana jest aktualizacja plików:${versionMsg}" \
@@ -1238,7 +1238,7 @@ update_if_needed() {
 
 			if ! [ $? -eq 1 ]; then
 
-        clear_last_time "update_needed"
+				clear_last_time "update_needed"
 
 				if [ "$redeploy" -gt 0 ]; then
 					docker_compose_down
@@ -2339,7 +2339,7 @@ gather_diagnostics() {
 		echo "                 domena : $domain"
 		echo "      wersja nightscout : $ns_tag"
 		echo " wersja nightscout-tool : $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
-    echo "                  build : ${updateInstalled}"
+		echo "                  build : ${updateInstalled}"
 	} >"$SUPPORT_LOG"
 
 	ohai "Zbieranie statusu usług"
@@ -2743,7 +2743,7 @@ watchdog_check() {
 	fi
 
 	free_space_check
-  update_background_check
+	update_background_check
 
 	local NS_STATUS=$(get_container_status_code 'ns-server')
 	local DB_STATUS=$(get_container_status_code 'ns-database')
@@ -2880,7 +2880,7 @@ load_update_channel() {
 startup_version() {
 	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 	msgnote "nightscout-tool version $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)"
-  msgnote "build ${updateInstalled}"
+	msgnote "build ${updateInstalled}"
 	msgnote "$uni_copyright 2023-2024 Dominik Dzienia"
 	msgnote "Licensed under CC BY-NC-ND 4.0"
 }
@@ -2914,26 +2914,26 @@ parse_commandline_args() {
 		-d | --develop)
 			warn "Switching to DEVELOP update channel"
 			UPDATE_CHANNEL=develop
-      forceUpdateCheck=1
+			forceUpdateCheck=1
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
 			shift
 			;;
 		-p | --production)
 			warn "Switching to PRODUCTION update channel"
 			UPDATE_CHANNEL=master
-      forceUpdateCheck=1
+			forceUpdateCheck=1
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
 			shift
 			;;
 		-u | --update)
 			warn "Forcing update check"
-      forceUpdateCheck=1
+			forceUpdateCheck=1
 			shift
 			;;
 		-c | --channel)
 			shift # The arg is next in position args
 			UPDATE_CHANNEL_CANDIDATE=$1
-      forceUpdateCheck=1
+			forceUpdateCheck=1
 
 			[[ ! "$UPDATE_CHANNEL_CANDIDATE" =~ ^[a-z]{3,}$ ]] && {
 				echo "Incorrect channel name provided: $UPDATE_CHANNEL_CANDIDATE"

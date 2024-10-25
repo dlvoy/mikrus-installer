@@ -39,7 +39,7 @@ DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
 SCRIPT_VERSION="1.9.1"          #auto-update
-SCRIPT_BUILD_TIME="2024.10.20"  #auto-update
+SCRIPT_BUILD_TIME="2024.10.25"  #auto-update
 
 #=======================================
 # SETUP

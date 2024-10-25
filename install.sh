@@ -674,6 +674,7 @@ freshInstall=0
 cachedMenuDomain=''
 lastTimeSpaceInfo=0
 diagnosticsSizeOk=0
+forceUpdateCheck=0
 
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
@@ -1105,12 +1106,12 @@ download_if_needed() {
 	local lastCheck=$(read_or_default "$UPDATES_DIR/timestamp")
 	local timestampNow=$(date +%s)
 	local updateCheck=$UPDATE_CHECK
-	if (((timestampNow - lastCheck) > updateCheck)) || [ $# -eq 1 ]; then
+  if (((timestampNow - lastCheck) > updateCheck)) || [ $# -eq 1 ] || (( forceUpdateCheck == 1 )); then
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."
 		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
 		local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded")
-		if [ "$onlineUpdated" == "$lastDownload" ]; then
+    if [ "$onlineUpdated" == "$lastDownload" ] && (( forceUpdateCheck == 0 )); then
 			msgok "Latest update already downloaded"
 		else
 			echo "$onlineUpdated" >"$UPDATES_DIR/downloaded"
@@ -1160,14 +1161,11 @@ update_if_needed() {
 
 	download_if_needed
 
-	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
-	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "")
+	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "???")
+	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 
-	if [ "$lastDownload" == "$updateInstalled" ]; then
+  if [ "$lastDownload" == "$updateInstalled" ] && (( forceUpdateCheck == 0 )) && [ $# -eq 0 ]; then
 		msgok "Scripts and config files are up to date"
-		if [ $# -eq 1 ]; then
-			okdlg "Aktualizacja skryptów" "$1"
-		fi
 	else
 
 		local changed=0
@@ -1213,6 +1211,7 @@ update_if_needed() {
 
 		if [ "$changed" -eq 0 ]; then
 			if [ $# -eq 1 ]; then
+		    msgok "Scripts and config files are up to date"
 				okdlg "Aktualizacja skryptów" "$1"
 			fi
 		else
@@ -1221,8 +1220,13 @@ update_if_needed() {
 				okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
 			fi
 
+      local versionMsg="${TL}Build: ${updateInstalled}"
+      if [ ! "$lastDownload" == "$updateInstalled" ]; then
+        versionMsg="$(pad_multiline "${TL}Masz build: ${updateInstalled}${NL}  Dostępny: ${lastDownload}")"
+      fi
+
 			yesnodlg "Aktualizacja skryptów" "$uni_confirm_upd" "$uni_resign" \
-				"Zalecana jest aktualizacja plików:" \
+				"Zalecana jest aktualizacja plików:${versionMsg}" \
 				"$(
 					pad_multiline \
 						"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
@@ -1255,7 +1259,7 @@ update_if_needed() {
 					dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
 				fi
 
-				echo "$onlineUpdated" >"$UPDATES_DIR/updated"
+				echo "$lastDownload" >"$UPDATES_DIR/updated"
 
 				if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
 					ohai "Updating $TOOL_FILE"
@@ -2325,6 +2329,7 @@ gather_diagnostics() {
 	local domain=$(get_td_domain)
 	local ns_tag=$(dotenv-tool -r get -f "$ENV_FILE_DEP" "NS_NIGHTSCOUT_TAG")
 	local mikrus_h=$(hostname)
+	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 
 	local LOG_DIVIDER="======================================================="
 
@@ -2334,6 +2339,7 @@ gather_diagnostics() {
 		echo "                 domena : $domain"
 		echo "      wersja nightscout : $ns_tag"
 		echo " wersja nightscout-tool : $SCRIPT_VERSION ($SCRIPT_BUILD_TIME) $UPDATE_CHANNEL"
+    echo "                  build : ${updateInstalled}"
 	} >"$SUPPORT_LOG"
 
 	ohai "Zbieranie statusu usług"
@@ -2872,7 +2878,9 @@ load_update_channel() {
 }
 
 startup_version() {
+	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 	msgnote "nightscout-tool version $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)"
+  msgnote "build ${updateInstalled}"
 	msgnote "$uni_copyright 2023-2024 Dominik Dzienia"
 	msgnote "Licensed under CC BY-NC-ND 4.0"
 }
@@ -2881,7 +2889,7 @@ parse_commandline_args() {
 
 	load_update_channel
 
-	CMDARGS=$(getopt --quiet -o wvdpc: --long watchdog,version,develop,production,channel: -n 'nightscout-tool' -- "$@")
+	CMDARGS=$(getopt --quiet -o wvdpuc: --long watchdog,version,develop,production,update,channel: -n 'nightscout-tool' -- "$@")
 
 	# shellcheck disable=SC2181
 	if [ $? != 0 ]; then
@@ -2906,18 +2914,26 @@ parse_commandline_args() {
 		-d | --develop)
 			warn "Switching to DEVELOP update channel"
 			UPDATE_CHANNEL=develop
+      forceUpdateCheck=1
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
 			shift
 			;;
 		-p | --production)
 			warn "Switching to PRODUCTION update channel"
 			UPDATE_CHANNEL=master
+      forceUpdateCheck=1
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
+			shift
+			;;
+		-u | --update)
+			warn "Forcing update check"
+      forceUpdateCheck=1
 			shift
 			;;
 		-c | --channel)
 			shift # The arg is next in position args
 			UPDATE_CHANNEL_CANDIDATE=$1
+      forceUpdateCheck=1
 
 			[[ ! "$UPDATE_CHANNEL_CANDIDATE" =~ ^[a-z]{3,}$ ]] && {
 				echo "Incorrect channel name provided: $UPDATE_CHANNEL_CANDIDATE"

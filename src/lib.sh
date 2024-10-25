@@ -31,6 +31,8 @@ TOOL_FILE=/srv/nightscout/tools/nightscout-tool
 TOOL_LINK=/usr/bin/nightscout-tool
 UPDATES_DIR=/srv/nightscout/updates
 UPDATE_CHANNEL=master
+UPDATE_CHECK=86400              # == 1 day
+UPDATE_MAIL=2592000             # == 30 days
 DISK_LOW_WARNING=838860800      # == 800 MiB
 DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
@@ -265,6 +267,9 @@ event_label() {
 		;;
 	update_tool)
 		echo "Aktualizacja narzędzia"
+		;;
+	update_needed)
+		echo "Potrzebna aktualizacja"
 		;;
 	update_containers)
 		echo "Aktualizacja kontenerów"
@@ -1058,128 +1063,196 @@ extract_version() {
 	fi
 }
 
-update_if_needed() {
-	local lastUpdate=$(cat "$UPDATES_DIR/timestamp")
-	local timestamp=$(date +%s)
+read_or_default() {
+	if [ -f $1 ]; then
+		cat "$1"
+	else
+		if [ $# -eq 2 ]; then
+			echo "$2"
+		else
+			echo ""
+		fi
+	fi
+}
 
-	if [ $((timestamp - lastUpdate)) -gt $((60 * 60 * 24)) ] || [ $# -eq 1 ]; then
-		echo "$timestamp" >"$UPDATES_DIR/timestamp"
+download_updates() {
+	ohai "Downloading updated scripts and config files"
+	curl -fsSL -o "$UPDATES_DIR/install.sh" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
+	curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
+	curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
+	curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
+	curl -fsSL -o "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
+	curl -fsSL -o "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
+}
+
+download_if_needed() {
+	local lastCheck=$(read_or_default "$UPDATES_DIR/timestamp")
+	local timestampNow=$(date +%s)
+	local updateCheck=$UPDATE_CHECK
+	if (((timestampNow - lastCheck) > updateCheck)) || [ $# -eq 1 ]; then
+		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
+		ohai "Checking if new version is available..."
 		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
-		local lastUpdate=$(cat "$UPDATES_DIR/updated")
-		if [ "$onlineUpdated" == "$lastUpdate" ] || [ $# -eq 0 ]; then
-			msgok "Scripts and config files are up to date"
+		local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded")
+		if [ "$onlineUpdated" == "$lastDownload" ]; then
+			msgok "Latest update already downloaded"
+		else
+			echo "$onlineUpdated" >"$UPDATES_DIR/downloaded"
+			download_updates
+		fi
+
+	else
+		msgok "Too soon to download update, skipping..."
+	fi
+}
+
+update_background_check() {
+	download_if_needed
+
+	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
+	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "")
+
+	if [ ! "$lastDownload" == "$updateInstalled" ]; then
+		echo "Update needed"
+		local lastCalled=$(get_since_last_time "update_needed")
+		if ((lastCalled == -1)) || ((lastCalled > UPDATE_MAIL)); then
+			set_last_time "update_needed"
+			echo "Sending mail to user - tool update needed"
+			{
+				echo "✨ Na Twoim serwerze mikr.us z Nightscoutem można zaktualizować narzędzie nightscout-tool!"
+				echo " "
+				echo "🐕 Watchdog wykrył że dostępna jest aktualizacja nightscout-tool,"
+        echo "a u Ciebie zainstalowana jest jeszcze starsza wersja."
+				echo " "
+				echo "Aby zaktualizować narzędzie:"
+				echo " "
+				echo "1. Zaloguj się do panelu administracyjnego mikrusa i zaloguj się do WebSSH:"
+				echo "   https://mikr.us/panel/?a=webssh"
+				echo " "
+				echo "2. Uruchom narzędzie komendą:"
+				echo "   nightscout-tool"
+				echo " "
+				echo "3. Potwierdź naciskając przycisk:"
+				echo "   【 Aktualizacja 】"
+        echo " "
+			} | pusher "✨_Na_Twoim_serwerze_Nightscout_dostępna_jest_aktualizacja"
+		fi
+	fi
+}
+
+update_if_needed() {
+
+	download_if_needed
+
+	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
+	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "")
+
+	if [ "$lastDownload" == "$updateInstalled" ]; then
+		msgok "Scripts and config files are up to date"
+		if [ $# -eq 1 ]; then
+			okdlg "Aktualizacja skryptów" "$1"
+		fi
+	else
+
+		local changed=0
+		local redeploy=0
+
+		local instOnlineVer=$(extract_version "$(<"$UPDATES_DIR/install.sh")")
+		local depEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/deployment.env")")
+		local nsEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/nightscout.env")")
+		local compOnlineVer=$(extract_version "$(<"$UPDATES_DIR/docker-compose.yml")")
+
+		local instLocalVer=$(extract_version "$(<"$TOOL_FILE")")
+		local depEnvLocalVer=$(extract_version "$(<"$ENV_FILE_DEP")")
+		local nsEnvLocalVer=$(extract_version "$(<"$ENV_FILE_NS")")
+		local compLocalVer=$(extract_version "$(<"$DOCKER_COMPOSE_FILE")")
+
+		local msgInst="$(printf "\U1F7E2") $instLocalVer"
+		local msgDep="$(printf "\U1F7E2") $depEnvLocalVer"
+		local msgNs="$(printf "\U1F7E2") $nsEnvLocalVer"
+		local msgComp="$(printf "\U1F7E2") $compLocalVer"
+
+		if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$onlineUpdated" == "$lastUpdate" ]; then
+			changed=$((changed + 1))
+			msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
+		fi
+
+		if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+			changed=$((changed + 1))
+			redeploy=$((redeploy + 1))
+			msgDep="$(printf "\U1F534") $depEnvLocalVer $(printf "\U27A1") $depEnvOnlineVer"
+		fi
+
+		if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+			changed=$((changed + 1))
+			redeploy=$((redeploy + 1))
+			msgNs="$(printf "\U1F534") $nsEnvLocalVer $(printf "\U27A1") $nsEnvOnlineVer"
+		fi
+
+		if ! [ "$compLocalVer" == "$compOnlineVer" ]; then
+			changed=$((changed + 1))
+			redeploy=$((redeploy + 1))
+			msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
+		fi
+
+		if [ "$changed" -eq 0 ]; then
 			if [ $# -eq 1 ]; then
 				okdlg "Aktualizacja skryptów" "$1"
 			fi
 		else
-			ohai "Updating scripts and config files"
-			curl -fsSL -o "$UPDATES_DIR/install.sh" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
-			curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
-			curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
-			curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
-			curl -fsSL -o "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
-			curl -fsSL -o "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
-
-			local changed=0
-			local redeploy=0
-
-			local instOnlineVer=$(extract_version "$(<"$UPDATES_DIR/install.sh")")
-			local depEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/deployment.env")")
-			local nsEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/nightscout.env")")
-			local compOnlineVer=$(extract_version "$(<"$UPDATES_DIR/docker-compose.yml")")
-
-			local instLocalVer=$(extract_version "$(<"$TOOL_FILE")")
-			local depEnvLocalVer=$(extract_version "$(<"$ENV_FILE_DEP")")
-			local nsEnvLocalVer=$(extract_version "$(<"$ENV_FILE_NS")")
-			local compLocalVer=$(extract_version "$(<"$DOCKER_COMPOSE_FILE")")
-
-			local msgInst="$(printf "\U1F7E2") $instLocalVer"
-			local msgDep="$(printf "\U1F7E2") $depEnvLocalVer"
-			local msgNs="$(printf "\U1F7E2") $nsEnvLocalVer"
-			local msgComp="$(printf "\U1F7E2") $compLocalVer"
-
-			if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
-				changed=$((changed + 1))
-				msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
+			local okTxt=""
+			if [ "$redeploy" -gt 0 ]; then
+				okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
 			fi
 
-			if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
-				changed=$((changed + 1))
-				redeploy=$((redeploy + 1))
-				msgDep="$(printf "\U1F534") $depEnvLocalVer $(printf "\U27A1") $depEnvOnlineVer"
-			fi
+			yesnodlg "Aktualizacja skryptów" "$uni_confirm_upd" "$uni_resign" \
+				"Zalecana jest aktualizacja plików:" \
+				"$(
+					pad_multiline \
+						"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
+						"${NL}${uni_bullet}Konfiguracja deploymentu: $msgDep" \
+						"${NL}${uni_bullet}Konfiguracja Nightscout:  $msgNs" \
+						"${NL}${uni_bullet}Kompozycja usług:         $msgComp${NL}"
+				)" \
+				"$okTxt"
 
-			if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
-				changed=$((changed + 1))
-				redeploy=$((redeploy + 1))
-				msgNs="$(printf "\U1F534") $nsEnvLocalVer $(printf "\U27A1") $nsEnvOnlineVer"
-			fi
+			if ! [ $? -eq 1 ]; then
 
-			if ! [ "$compLocalVer" == "$compOnlineVer" ]; then
-				changed=$((changed + 1))
-				redeploy=$((redeploy + 1))
-				msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
-			fi
+        clear_last_time "update_needed"
 
-			if [ "$changed" -eq 0 ]; then
-				if [ $# -eq 1 ]; then
-          okdlg "Aktualizacja skryptów" "$1"
-				fi
-			else
-				local okTxt=""
 				if [ "$redeploy" -gt 0 ]; then
-					okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
+					docker_compose_down
 				fi
 
-				yesnodlg "Aktualizacja skryptów" "$uni_confirm_upd" "$uni_resign" \
-					"Zalecana jest aktualizacja plików:" \
-					"$(
-						pad_multiline \
-							"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
-							"${NL}${uni_bullet}Konfiguracja deploymentu: $msgDep" \
-							"${NL}${uni_bullet}Konfiguracja Nightscout:  $msgNs" \
-							"${NL}${uni_bullet}Kompozycja usług:         $msgComp${NL}"
-					)" \
-					"$okTxt"
-
-				if ! [ $? -eq 1 ]; then
-					if [ "$redeploy" -gt 0 ]; then
-						docker_compose_down
-					fi
-
-					if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
-						ohai "Updating $DOCKER_COMPOSE_FILE"
-						cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
-					fi
-
-					if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
-						ohai "Updating $ENV_FILE_DEP"
-						dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
-					fi
-
-					if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
-						ohai "Updating $ENV_FILE_NS"
-						dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
-					fi
-
-					echo "$onlineUpdated" >"$UPDATES_DIR/updated"
-
-					if ! [ "$instOnlineVer" == "$instLocalVer" ]; then
-						ohai "Updating $TOOL_FILE"
-						cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
-            okdlg "Aktualizacja zakończona" "Narzędzie zostanie uruchomione ponownie"
-						ohai "Restarting tool"
-						exec "$TOOL_FILE"
-					fi
-
+				if ! [ "$compOnlineVer" == "$compLocalVer" ]; then
+					ohai "Updating $DOCKER_COMPOSE_FILE"
+					cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
 				fi
+
+				if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+					ohai "Updating $ENV_FILE_DEP"
+					dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
+				fi
+
+				if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+					ohai "Updating $ENV_FILE_NS"
+					dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
+				fi
+
+				echo "$onlineUpdated" >"$UPDATES_DIR/updated"
+
+				if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$onlineUpdated" == "$lastUpdate" ]; then
+					ohai "Updating $TOOL_FILE"
+					cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
+					okdlg "Aktualizacja zakończona" "Narzędzie zostanie uruchomione ponownie"
+					ohai "Restarting tool"
+					exec "$TOOL_FILE"
+				fi
+
 			fi
-
 		fi
-
-	else
-		msgok "Too soon to check for update, skipping..."
 	fi
+
 }
 
 about_dialog() {
@@ -2648,6 +2721,7 @@ watchdog_check() {
 	fi
 
 	free_space_check
+  update_background_check
 
 	local NS_STATUS=$(get_container_status_code 'ns-server')
 	local DB_STATUS=$(get_container_status_code 'ns-database')

@@ -2387,7 +2387,7 @@ gather_diagnostics() {
 			echo "$LOG_DIVIDER"
 			echo " Watchdog log"
 			echo "$LOG_DIVIDER"
-			timeout -k 15 10 cat "$WATCHDOG_LOG_FILE"
+			timeout -k 15 10 tail -n 200 "$WATCHDOG_LOG_FILE"
 		} >>"$SUPPORT_LOG"
 	fi
 
@@ -2396,7 +2396,7 @@ gather_diagnostics() {
 			echo "$LOG_DIVIDER"
 			echo " Watchdog failures log"
 			echo "$LOG_DIVIDER"
-			timeout -k 15 10 cat "$WATCHDOG_FAILURES_FILE"
+			timeout -k 15 10 tail -n 200 "$WATCHDOG_FAILURES_FILE"
 		} >>"$SUPPORT_LOG"
 	fi
 
@@ -2475,7 +2475,6 @@ send_diagnostics() {
 		retry_diagnostics 100 50 "$curr_time"
 		retry_diagnostics 50 50 "$curr_time"
 		retry_diagnostics 50 20 "$curr_time"
-		retry_diagnostics 20 10 "$curr_time"
 
 		ohai "Wysyłanie maila"
 

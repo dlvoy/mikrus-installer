@@ -2491,6 +2491,7 @@ send_diagnostics() {
 		retry_diagnostics 100 50 "$curr_time"
 		retry_diagnostics 50 50 "$curr_time"
 		retry_diagnostics 50 20 "$curr_time"
+		retry_diagnostics 20 10 "$curr_time"
 
 		ohai "Wysyłanie maila"
 

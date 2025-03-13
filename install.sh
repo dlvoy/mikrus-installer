@@ -939,13 +939,13 @@ setup_firewall() {
 		ufw allow ssh
 	} >>"$LOGTO" 2>&1
 
-	host=$(hostname)
+  host=$(hostname)
   
   # Extract the last 3 digits from the hostname
   port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
 	
-	port1=$((10000 + port_number))
-	port2=$((20000 + port_number))
+  port1=$((10000 + port_number))
+  port2=$((20000 + port_number))
   port3=$((30000 + port_number))
 
 	if ufw allow "$port1" >>"$LOGTO" 2>&1; then

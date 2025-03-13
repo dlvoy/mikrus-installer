@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.9.1
+### version: 1.9.2
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -54,8 +54,8 @@ DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
-SCRIPT_VERSION="1.9.1"          #auto-update
-SCRIPT_BUILD_TIME="2024.10.26"  #auto-update
+SCRIPT_VERSION="1.9.2"          #auto-update
+SCRIPT_BUILD_TIME="2025.03.13"  #auto-update
 
 #=======================================
 # SETUP
@@ -940,11 +940,13 @@ setup_firewall() {
 	} >>"$LOGTO" 2>&1
 
 	host=$(hostname)
-	host=${host:1}
-
-	port1=$((10000 + host))
-	port2=$((20000 + host))
-	port3=$((30000 + host))
+  
+  # Extract the last 3 digits from the hostname
+  port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
+	
+	port1=$((10000 + port_number))
+	port2=$((20000 + port_number))
+  port3=$((30000 + port_number))
 
 	if ufw allow "$port1" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port $port1"
@@ -1334,15 +1336,15 @@ instal_now_prompt() {
 }
 
 prompt_mikrus_host() {
-	if ! [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
+	if ! [[ "$MIKRUS_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
 		MIKRUS_HOST=$(hostname)
 		while :; do
-			if [[ "$MIKRUS_HOST" =~ [a-z][0-9]{3} ]]; then
+			if [[ "$MIKRUS_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
 				break
 			else
 				MIKRUS_NEW_HOST=$(whiptail --title "Podaj identyfikator serwera" --inputbox "\nNie udało się wykryć identyfikatora serwera,\npodaj go poniżej ręcznie.\n\nIdentyfikator składa się z jednej litery i trzech cyfr\n" --cancel-button "Anuluj" 13 65 3>&1 1>&2 2>&3)
 				exit_on_no_cancel
-				if [[ "$MIKRUS_NEW_HOST" =~ [a-z][0-9]{3} ]]; then
+				if [[ "$MIKRUS_NEW_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
 					MIKRUS_HOST=$MIKRUS_NEW_HOST
 					break
 				else

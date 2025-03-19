@@ -2323,7 +2323,7 @@ get_td_domain() {
 	local MHOST=$(hostname)
 	if ! [[ "$MHOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
 			MIKRUS_APIKEY=$(cat "/klucz_api")
-			MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .imie_id)
+			MIKRUS_INFO_HOST=$(curl -s -d "srv=$MHOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .imie_id)
 			if [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
         MHOST="$MIKRUS_INFO_HOST"
       fi

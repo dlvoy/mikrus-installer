@@ -1,11 +1,11 @@
 #!/bin/bash
 
-### version: 1.9.4
+### version: 1.9.5
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
-#      (c)2023 by Dominik Dzienia       #
+#      (c)2025 by Dominik Dzienia       #
 #      <dominik.dzienia@gmail.com>      #
 #      Licensed under MIT license       #
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#

@@ -38,8 +38,8 @@ DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
-SCRIPT_VERSION="1.9.4"          #auto-update
-SCRIPT_BUILD_TIME="2024.10.26"  #auto-update
+SCRIPT_VERSION="1.9.5"          #auto-update
+SCRIPT_BUILD_TIME="2025.03.19"  #auto-update
 
 #=======================================
 # SETUP
@@ -2893,7 +2893,7 @@ startup_version() {
 	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 	msgnote "nightscout-tool version $SCRIPT_VERSION ($SCRIPT_BUILD_TIME)"
 	msgnote "build ${updateInstalled}"
-	msgnote "$uni_copyright 2023-2024 Dominik Dzienia"
+	msgnote "$uni_copyright 2023-2025 Dominik Dzienia"
 	msgnote "Licensed under CC BY-NC-ND 4.0"
 }
 

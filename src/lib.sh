@@ -923,14 +923,14 @@ setup_firewall() {
 		ufw allow ssh
 	} >>"$LOGTO" 2>&1
 
-  host=$(hostname)
-  
-  # Extract the last 3 digits from the hostname
-  port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
-	
-  port1=$((10000 + port_number))
-  port2=$((20000 + port_number))
-  port3=$((30000 + port_number))
+	host=$(hostname)
+
+	# Extract the last 3 digits from the hostname
+	port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
+
+	port1=$((10000 + port_number))
+	port2=$((20000 + port_number))
+	port3=$((30000 + port_number))
 
 	if ufw allow "$port1" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port $port1"
@@ -1369,7 +1369,7 @@ prompt_mikrus_apikey() {
 				if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
 					MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
 
-			    if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]] || [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
+					if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]] || [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
 						msgcheck "Mikrus OK"
 						break
 					else
@@ -2306,12 +2306,12 @@ uninstall_menu() {
 get_td_domain() {
 	local MHOST=$(hostname)
 	if ! [[ "$MHOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
-			MIKRUS_APIKEY=$(cat "/klucz_api")
-			MIKRUS_INFO_HOST=$(curl -s -d "srv=$MHOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .imie_id)
-			if [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
-        MHOST="$MIKRUS_INFO_HOST"
-      fi
-  fi
+		MIKRUS_APIKEY=$(cat "/klucz_api")
+		MIKRUS_INFO_HOST=$(curl -s -d "srv=$MHOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .imie_id)
+		if [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
+			MHOST="$MIKRUS_INFO_HOST"
+		fi
+	fi
 	local APIKEY=$(dotenv-tool -r get -f "$ENV_FILE_ADMIN" "MIKRUS_APIKEY")
 	curl -sd "srv=$MHOST&key=$APIKEY" https://api.mikr.us/domain | jq -r ".[].name" | grep ".ns.techdiab.pl" | head -n 1
 }

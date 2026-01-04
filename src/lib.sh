@@ -760,8 +760,10 @@ patch_docker_compose() {
 			msgcheck "Docker compose file patched"
 			# Restart containers only if they were already running
 			if [ "$containers_running" -eq 1 ]; then
+        do_cleanup_sys
 				ohai "Restarting containers to apply patched configuration..."
 				update_containers
+        do_cleanup_docker
 				msgcheck "Containers restarted"
 			fi
 		fi

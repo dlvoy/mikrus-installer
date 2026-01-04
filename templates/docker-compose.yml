@@ -12,11 +12,11 @@ services:
     mem_limit: 400m
     mem_reservation: 100M
     restart: always
-    image: "bitnami/mongodb:${NS_MONGODB_TAG}"
+    image: "mongo:${NS_MONGODB_TAG}"
     environment:
       - MONGODB_EXTRA_FLAGS=--wiredTigerCacheSizeGB=0.4
     volumes:
-      - "${NS_DATA_DIR}/mongodb:/bitnami/mongodb"
+      - "${NS_DATA_DIR}/mongodb:/data/db"
     ports:
       - ${INTERNAL_MONGO_PORT}:27017
     networks:

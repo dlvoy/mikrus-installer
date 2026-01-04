@@ -43,6 +43,7 @@ check_dotenv
 setup_users
 setup_dir_structure
 download_conf
+patch_docker_compose
 download_tools
 setup_security
 

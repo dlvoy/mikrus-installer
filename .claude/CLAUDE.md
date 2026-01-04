@@ -1,0 +1,3 @@
+- this script runs in console UI style (ncurses style)
+- do not change install.sh file - it is generated from src/lib.sh and src/setup.sh with npm run build command
+- when generating code with command that may output to console, make sure to use convention to add >> "$LOGTO" 2>&1 to capture it into logs and not break UI

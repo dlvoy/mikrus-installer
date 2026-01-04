@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.9.5
+### version: 1.10.0
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -23,7 +23,7 @@
 
 REQUIRED_NODE_VERSION=18.0.0
 REQUIRED_DOTENV_VERSION=1.3.0
-LOGTO=/dev/null
+LOGTO=/srv/nightscout/data/debug.log
 NIGHTSCOUT_ROOT_DIR=/srv/nightscout
 CONFIG_ROOT_DIR=/srv/nightscout/config
 DATA_ROOT_DIR=/srv/nightscout/data
@@ -54,8 +54,8 @@ DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
-SCRIPT_VERSION="1.9.5"          #auto-update
-SCRIPT_BUILD_TIME="2025.03.19"  #auto-update
+SCRIPT_VERSION="1.10.0"          #auto-update
+SCRIPT_BUILD_TIME="2026.01.04"  #auto-update
 
 #=======================================
 # SETUP
@@ -740,8 +740,48 @@ check_docker() {
 }
 
 check_docker_compose() {
-	docker-compose -v >/dev/null 2>&1
+	docker compose -v >/dev/null 2>&1
 	add_if_not_ok "Docker compose" "docker-compose"
+}
+
+patch_docker_compose() {
+	if [[ -f $DOCKER_COMPOSE_FILE ]]; then
+		local patched=0
+		local containers_running=0
+
+		# Check if containers are already running before patching
+		local ns_status=$(get_docker_status "ns-server")
+		local db_status=$(get_docker_status "ns-database")
+		if [[ "$ns_status" == "running" ]] || [[ "$db_status" == "running" ]]; then
+			containers_running=1
+		fi
+
+		# Check if mongodb image needs patching (bitnami/mongodb or incorrect format)
+		if grep -qE "image:\s*(bitnami/)?mongo(db)?" "$DOCKER_COMPOSE_FILE"; then
+			ohai "Patching docker-compose.yml MongoDB image..."
+			# Replace any bitnami/mongodb or incorrect mongo image with proper format
+			sed -i -E 's|image:\s*"?bitnami/mongodb:.*"?|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
+			sed -i -E 's|image:\s*"?mongo:[^"]+"?|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
+			sed -i -E 's|image:\s*"?mongodb:[^"]+"?|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
+			patched=1
+		fi
+		# Check if volume path needs patching (bitnami/mongodb -> data/db)
+		if grep -q ":/bitnami/mongodb\"" "$DOCKER_COMPOSE_FILE"; then
+			ohai "Patching docker-compose.yml MongoDB volume path..."
+			sed -i -E 's|:/bitnami/mongodb"?|:/data/db"|g' "$DOCKER_COMPOSE_FILE"
+			patched=1
+		fi
+
+		if [ "$patched" -eq 1 ]; then
+			msgcheck "Docker compose file patched"
+			# Restart containers only if they were already running
+			if [ "$containers_running" -eq 1 ]; then
+				ohai "Restarting containers to apply patched configuration..."
+				update_containers
+				msgcheck "Containers restarted"
+			fi
+		fi
+	fi
 }
 
 check_jq() {
@@ -939,14 +979,14 @@ setup_firewall() {
 		ufw allow ssh
 	} >>"$LOGTO" 2>&1
 
-  host=$(hostname)
-  
-  # Extract the last 3 digits from the hostname
-  port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
-	
-  port1=$((10000 + port_number))
-  port2=$((20000 + port_number))
-  port3=$((30000 + port_number))
+	host=$(hostname)
+
+	# Extract the last 3 digits from the hostname
+	port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
+
+	port1=$((10000 + port_number))
+	port2=$((20000 + port_number))
+	port3=$((30000 + port_number))
 
 	if ufw allow "$port1" >>"$LOGTO" 2>&1; then
 		msgcheck "Do regul firewalla poprawnie dodano port $port1"
@@ -1007,12 +1047,12 @@ get_space_info() {
 }
 
 install_containers() {
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up --no-recreate -d >>"$LOGTO" 2>&1
+	docker compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up --no-recreate -d >>"$LOGTO" 2>&1
 }
 
 update_containers() {
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml pull >>"$LOGTO" 2>&1
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >>"$LOGTO" 2>&1
+	docker compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml pull >>"$LOGTO" 2>&1
+	docker compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml up -d >>"$LOGTO" 2>&1
 }
 
 install_containers_progress() {
@@ -1023,7 +1063,7 @@ install_containers_progress() {
 }
 
 uninstall_containers() {
-	docker-compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >>"$LOGTO" 2>&1
+	docker compose --env-file /srv/nightscout/config/deployment.env -f /srv/nightscout/config/docker-compose.yml down >>"$LOGTO" 2>&1
 }
 
 uninstall_containers_progress() {
@@ -1385,7 +1425,7 @@ prompt_mikrus_apikey() {
 				if [[ "$MIKRUS_APIKEY" =~ [0-9a-fA-F]{40} ]]; then
 					MIKRUS_INFO_HOST=$(curl -s -d "srv=$MIKRUS_HOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .server_id)
 
-			    if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]] || [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
+					if [[ "$MIKRUS_INFO_HOST" == "$MIKRUS_HOST" ]] || [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{1,16}[0-9]{3} ]]; then
 						msgcheck "Mikrus OK"
 						break
 					else
@@ -2322,12 +2362,12 @@ uninstall_menu() {
 get_td_domain() {
 	local MHOST=$(hostname)
 	if ! [[ "$MHOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
-			MIKRUS_APIKEY=$(cat "/klucz_api")
-			MIKRUS_INFO_HOST=$(curl -s -d "srv=$MHOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .imie_id)
-			if [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
-        MHOST="$MIKRUS_INFO_HOST"
-      fi
-  fi
+		MIKRUS_APIKEY=$(cat "/klucz_api")
+		MIKRUS_INFO_HOST=$(curl -s -d "srv=$MHOST&key=$MIKRUS_APIKEY" -X POST https://api.mikr.us/info | jq -r .imie_id)
+		if [[ "$MIKRUS_INFO_HOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
+			MHOST="$MIKRUS_INFO_HOST"
+		fi
+	fi
 	local APIKEY=$(dotenv-tool -r get -f "$ENV_FILE_ADMIN" "MIKRUS_APIKEY")
 	curl -sd "srv=$MHOST&key=$APIKEY" https://api.mikr.us/domain | jq -r ".[].name" | grep ".ns.techdiab.pl" | head -n 1
 }
@@ -3009,6 +3049,7 @@ check_dotenv
 setup_users
 setup_dir_structure
 download_conf
+patch_docker_compose
 download_tools
 setup_security
 

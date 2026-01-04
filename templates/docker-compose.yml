@@ -16,7 +16,7 @@ services:
     environment:
       - MONGODB_EXTRA_FLAGS=--wiredTigerCacheSizeGB=0.4
     volumes:
-      - "${NS_DATA_DIR}/mongodb:/data/db"
+      - "${NS_DATA_DIR}/mongodb/data/db:/data/db"
     ports:
       - ${INTERNAL_MONGO_PORT}:27017
     networks:

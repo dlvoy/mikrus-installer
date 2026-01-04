@@ -740,19 +740,18 @@ patch_docker_compose() {
 			containers_running=1
 		fi
 
-		# Check if mongodb image needs patching (bitnami/mongodb or incorrect format)
-		if grep -qE "image:\s*(bitnami/)?mongo(db)?" "$DOCKER_COMPOSE_FILE"; then
+		# Check if mongodb image needs patching (bitnami/mongodb)
+		if grep -q "bitnami/mongodb" "$DOCKER_COMPOSE_FILE"; then
 			ohai "Patching docker-compose.yml MongoDB image..."
-			# Replace any bitnami/mongodb or incorrect mongo image with proper format
-			sed -i -E 's|image:\s*"?bitnami/mongodb:.*"?|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
-			sed -i -E 's|image:\s*"?mongo:[^"]+"?|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
-			sed -i -E 's|image:\s*"?mongodb:[^"]+"?|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
+			# Replace bitnami/mongodb with official mongo image
+			sed -i -E 's|image:\s*"*(bitnami/)?mongodb:.*"|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
 			patched=1
 		fi
 		# Check if volume path needs patching (bitnami/mongodb -> data/db)
-		if grep -q ":/bitnami/mongodb\"" "$DOCKER_COMPOSE_FILE"; then
+		if grep -q "/bitnami/mongodb" "$DOCKER_COMPOSE_FILE"; then
 			ohai "Patching docker-compose.yml MongoDB volume path..."
-			sed -i -E 's|:/bitnami/mongodb"?|:/data/db"|g' "$DOCKER_COMPOSE_FILE"
+			# Replace both host path and container path for mongodb volume
+			sed -i -E 's|(\$\{NS_DATA_DIR\}/mongodb):/bitnami/mongodb"|\1/data/db:/data/db"|g' "$DOCKER_COMPOSE_FILE"
 			patched=1
 		fi
 

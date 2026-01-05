@@ -7,10 +7,14 @@ help() {
 Usage: nightscout-tool [options]
 
 Description:
-	Nightscout-tool is a command-line tool for managing Nightscout.	
 
-	In UI mode, tool provides a menu-driven interface for managing Nightscout server, its configuration, updates, cleanup, and diagnostics.
-	In watchdog mode, it can be used to monitor the status of Nightscout and send an email alert if the service is down.
+  Nightscout-tool is a command-line tool for managing Nightscout.
+
+  In UI mode, tool provides a menu-driven interface for managing 
+  Nightscout server, its configuration, updates, cleanup, and diagnostics.
+	
+  In watchdog mode, it can be used to monitor the status of Nightscout
+  and send an email alert if the service is down.
 
 Options:
   -w, --watchdog    Run in watchdog mode
@@ -28,7 +32,7 @@ parse_commandline_args() {
 
 	load_update_channel
 
-	CMDARGS=$(getopt --quiet -o wvdpuc: --long watchdog,version,develop,production,update,channel: -n 'nightscout-tool' -- "$@")
+	CMDARGS=$(getopt --quiet -o wvldpuc:h --long watchdog,version,loud,develop,production,update,channel:,help -n 'nightscout-tool' -- "$@")
 
 	# shellcheck disable=SC2181
 	if [ $? != 0 ]; then
@@ -40,10 +44,12 @@ parse_commandline_args() {
 	eval set -- "$CMDARGS"
 
 	WATCHDOGMODE=false
+  NONINTERACTIVE_MODE=false
 	while true; do
 		case "$1" in
 		-w | --watchdog)
 			WATCHDOGMODE=true
+      NONINTERACTIVE_MODE=true
 			shift
 			;;
 		-v | --version)
@@ -106,6 +112,8 @@ parse_commandline_args() {
 	done
 
 	if [ "$WATCHDOGMODE" = "true" ]; then
+    startup_version
+    startup_debug
 		watchdog_check
 	fi
 

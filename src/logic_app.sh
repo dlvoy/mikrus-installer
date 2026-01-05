@@ -4,7 +4,6 @@
 
 update_logto() {
 	if [[ "$UPDATE_CHANNEL" == "develop" || "$FORCE_DEBUG_LOG" == "1" ]]; then
-		msgok "Debug logging enabled - see: $DEBUG_LOG_FILE"
 		LOGTO="$DEBUG_LOG_FILE"
 	else
 		LOGTO=/dev/null
@@ -37,7 +36,6 @@ get_domain_status() {
 load_update_channel() {
 	if [[ -f $UPDATE_CHANNEL_FILE ]]; then
 		UPDATE_CHANNEL=$(cat "$UPDATE_CHANNEL_FILE")
-		msgok "Loaded update channel: $UPDATE_CHANNEL"
 		update_logto
 	fi
 }
@@ -48,4 +46,13 @@ startup_version() {
 	msgnote "build ${updateInstalled}"
 	msgnote "$uni_copyright 2023-2026 Dominik Dzienia"
 	msgnote "Licensed under CC BY-NC-ND 4.0"
+	if [[ -f $UPDATE_CHANNEL_FILE ]]; then
+		msgok "Loaded update channel: $UPDATE_CHANNEL"
+  fi
+}
+
+startup_debug() {
+	if [[ "$UPDATE_CHANNEL" == "develop" || "$FORCE_DEBUG_LOG" == "1" ]]; then
+		msgdebug "Debug logging enabled - see: $DEBUG_LOG_FILE"
+	fi
 }

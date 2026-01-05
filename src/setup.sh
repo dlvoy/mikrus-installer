@@ -28,8 +28,9 @@ if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
 # MAIN SCRIPT
 #=======================================
 
-startup_version
 parse_commandline_args "$@"
+startup_version
+startup_debug
 # check_interactive
 check_git
 check_docker

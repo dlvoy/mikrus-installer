@@ -42,6 +42,7 @@ DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
 SCRIPT_VERSION="1.10.1"         #auto-update
 SCRIPT_BUILD_TIME="2026.01.05"  #auto-update
 FORCE_DEBUG_LOG=""
+NONINTERACTIVE_MODE="false"
 
 #=======================================
 # DOWNLOAD CONFIG

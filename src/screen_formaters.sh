@@ -25,6 +25,7 @@ emoji_check="\U2705"
 emoji_ok="\U1F197"
 emoji_err="\U274C"
 emoji_note="\U1F4A1"
+emoji_debug="\U1F4DC"
 
 uni_bullet="  $(printf '\u2022') "
 uni_copyright="$(printf '\uA9\uFE0F')"

@@ -150,7 +150,9 @@ get_watchdog_status() {
 }
 
 watchdog_check() {
-	echo "Nightscout Watchdog mode"
+	echo "---------------------------"
+  echo " Nightscout Watchdog mode"
+	echo "---------------------------"
 
 	WATCHDOG_LAST_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 	WATCHDOG_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

@@ -28,6 +28,12 @@ parse_commandline_args() {
 			echo "$SCRIPT_VERSION"
 			exit 0
 			;;
+		-l | --loud)
+			warn "Loud mode, enabling debug logging"
+			FORCE_DEBUG_LOG="1"	
+			update_logto
+			shift
+			;;
 		-d | --develop)
 			warn "Switching to DEVELOP update channel"
 			UPDATE_CHANNEL=develop

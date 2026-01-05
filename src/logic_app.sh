@@ -3,7 +3,8 @@
 #=======================================
 
 update_logto() {
-	if [[ "$UPDATE_CHANNEL" == "develop" ]]; then
+	if [[ "$UPDATE_CHANNEL" == "develop" || "$FORCE_DEBUG_LOG" == "1" ]]; then
+		msgok "Debug logging enabled - see: $DEBUG_LOG_FILE"
 		LOGTO="$DEBUG_LOG_FILE"
 	else
 		LOGTO=/dev/null

@@ -16,14 +16,17 @@ const dateFormated = event.toISOString().substr(0, 10).replaceAll('-', '.');
 
 try {
     let data = fs.readFileSync(srcDir + path.sep + 'setup.sh', 'utf8');
-    data = data.replace(regexDevRemove, '');
-    data = data.replace(regexInclude, (_, _2, fileName) => {
-        const included = fs.readFileSync(srcDir + path.sep + fileName, 'utf8');
-        return included
-    });
-    data = data.replace(regexVer, '$1'+manifest.version);
-    data = data.replace(regexScrVer, '$1'+manifest.version+'$3');
-    data = data.replace(regexDate, '$1'+dateFormated+'$3');
+    while (data.includes('#include') || data.includes('#dev-begin')) {
+        data = data.replace(regexDevRemove, '');
+        data = data.replace(regexInclude, (_, _2, fileName) => {
+            const included = fs.readFileSync(srcDir + path.sep + fileName, 'utf8');
+            return included+"\n\n"
+        });
+    
+        data = data.replace(regexVer, '$1'+manifest.version);
+        data = data.replace(regexScrVer, '$1'+manifest.version+'$3');
+        data = data.replace(regexDate, '$1'+dateFormated+'$3');
+    }
     fs.writeFileSync(baseDir + path.sep + 'install.sh', data);
 } catch (err) {
     console.error(err);

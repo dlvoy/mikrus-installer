@@ -49,612 +49,28 @@ GITHUB_BASE_URL="https://raw.githubusercontent.com/dlvoy/mikrus-installer"
 GITEA_BASE_URL="https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch"
 GITHUB_UNAVAILABLE=""  # Empty string = GitHub is available, set to "1" if GitHub fails
 
+#dev-begin
 #=======================================
-# SETUP
-#=======================================
-
-set -u
-
-abort() {
-	printf "%s\n" "$@" >&2
-	exit 1
-}
-
-export NEWT_COLORS='
-    root=white,black
-    border=black,lightgray
-    window=lightgray,lightgray
-    shadow=black,gray
-    title=black,lightgray
-    button=black,cyan
-    actbutton=white,cyan
-    compactbutton=black,lightgray
-    checkbox=black,lightgray
-    actcheckbox=lightgray,cyan
-    entry=black,lightgray
-    disentry=gray,lightgray
-    label=black,lightgray
-    listbox=black,lightgray
-    actlistbox=black,cyan
-    sellistbox=lightgray,black
-    actsellistbox=lightgray,black
-    textbox=black,lightgray
-    acttextbox=black,cyan
-    emptyscale=,gray
-    fullscale=,cyan
-    helpline=white,black
-    roottext=lightgrey,black
-'
-
-#=======================================
-# SANITY CHECKS
+# IMPORTS - generic
 #=======================================
 
-# Fail fast with a concise message when not using bash
-# Single brackets are needed here for POSIX compatibility
-# shellcheck disable=SC2292
-if [ -z "${BASH_VERSION:-}" ]; then
-	abort "Bash is required to interpret this script."
-fi
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+# shellcheck source=/dev/null
+. "$DIR/screen_config.sh"
+. "$DIR/screen_formaters.sh"
+. "$DIR/utils_console.sh"
+. "$DIR/utils.sh"
+. "$DIR/utils_string.sh"
+. "$DIR/screen_dialogs.sh"
+#dev-end
 
-# Check if script is run with force-interactive mode in CI
-if [[ -n "${CI-}" && -n "${INTERACTIVE-}" ]]; then
-	abort "Cannot run force-interactive mode in CI."
-fi
-
-# Check if both `INTERACTIVE` and `NONINTERACTIVE` are set
-# Always use single-quoted strings with `exp` expressions
-# shellcheck disable=SC2016
-if [[ -n "${INTERACTIVE-}" && -n "${NONINTERACTIVE-}" ]]; then
-	abort 'Both `$INTERACTIVE` and `$NONINTERACTIVE` are set. Please unset at least one variable and try again.'
-fi
-
-# Check if script is run in POSIX mode
-if [[ -n "${POSIXLY_CORRECT+1}" ]]; then
-	abort 'Bash must not run in POSIX mode. Please unset POSIXLY_CORRECT and try again.'
-fi
-
-#=======================================
-# FORMATERS
-#=======================================
-
-if [[ -t 1 ]]; then
-	tty_escape() { printf "\033[%sm" "$1"; }
-else
-	tty_escape() { :; }
-fi
-tty_mkbold() { tty_escape "1;$1"; }
-# tty_underline="$(tty_escape "4;39")"
-tty_blue="$(tty_mkbold 34)"
-tty_red="$(tty_mkbold 31)"
-tty_bold="$(tty_mkbold 39)"
-tty_reset="$(tty_escape 0)"
-
-NL="\n"
-TL="\n\n"
-
-#=======================================
-# EMOJIS
-#=======================================
-
-emoji_check="\U2705"
-emoji_ok="\U1F197"
-emoji_err="\U274C"
-emoji_note="\U1F4A1"
-
-uni_bullet="  $(printf '\u2022') "
-uni_copyright="$(printf '\uA9\uFE0F')"
-uni_bullet_pad="    "
-uni_warn="$(printf "\U26A0")"
-
-uni_exit=" $(printf '\U274C') Wyjdź "
-uni_start=" $(printf '\U1F984') Zaczynamy "
-uni_menu=" $(printf '\U1F6E0')  Menu "
-uni_finish=" $(printf '\U1F984') Zamknij "
-uni_reenter=" $(printf '\U21AA') Tak "
-uni_noenter=" $(printf '\U2716') Nie "
-uni_back=" $(printf '\U2B05') Wróć "
-uni_select=" Wybierz "
-uni_excl="$(printf '\U203C')"
-uni_confirm_del=" $(printf '\U1F4A3') Tak "
-uni_confirm_ch=" $(printf '\U1F199') Zmień "
-uni_confirm_upd=" $(printf '\U1F199') Aktualizuj "
-uni_confirm_ed=" $(printf '\U1F4DD') Edytuj "
-uni_install=" $(printf '\U1F680') Instaluj "
-uni_resign=" $(printf '\U1F6AB') Rezygnuję "
-uni_send=" $(printf '\U1F4E7') Wyślij "
-uni_delete=" $(printf '\U1F5D1') Usuń "
-uni_leave_logs=" $(printf '\U1F4DC') Zostaw "
-
-uni_ns_ok="$(printf '\U1F7E2') działa"
-uni_watchdog_ok="$(printf '\U1F415') Nightscout działa"
-
-#=======================================
-# UTILS
-#=======================================
-
-shell_join() {
-	local arg
-	printf "%s" "$1"
-	shift
-	for arg in "$@"; do
-		printf " "
-		printf "%s" "${arg// /\ }"
-	done
-}
-
-chomp() {
-	printf "%s" "${1/"$'\n'"/}"
-}
-
-ohai() {
-	printf "${tty_blue}==>${tty_bold} %s${tty_reset}\n" "$(shell_join "$@")"
-}
-
-msgok() {
-	# shellcheck disable=SC2059
-	printf "$emoji_ok  $1\n"
-}
-
-msgnote() {
-	# shellcheck disable=SC2059
-	printf "$emoji_note  $1\n"
-}
-
-msgcheck() {
-	# shellcheck disable=SC2059
-	printf "$emoji_check  $1\n"
-}
-
-msgerr() {
-	# shellcheck disable=SC2059
-	printf "$emoji_err  $1\n"
-}
-
-warn() {
-	printf "${tty_red}Warning${tty_reset}: %s\n" "$(chomp "$1")" >&2
-}
-
-# Search for the given executable in PATH (avoids a dependency on the `which` command)
-which() {
-	# Alias to Bash built-in command `type -P`
-	type -P "$@"
-}
-
-major_minor() {
-	echo "${1%%.*}.$(
-		x="${1#*.}"
-		echo "${x%%.*}"
-	)"
-}
-
-version_gt() {
-	[[ "${1%.*}" -gt "${2%.*}" ]] || [[ "${1%.*}" -eq "${2%.*}" && "${1#*.}" -gt "${2#*.}" ]]
-}
-version_ge() {
-	[[ "${1%.*}" -gt "${2%.*}" ]] || [[ "${1%.*}" -eq "${2%.*}" && "${1#*.}" -ge "${2#*.}" ]]
-}
-version_lt() {
-	[[ "${1%.*}" -lt "${2%.*}" ]] || [[ "${1%.*}" -eq "${2%.*}" && "${1#*.}" -lt "${2#*.}" ]]
-}
-
-ifIsSet() {
-	[[ ${!1-x} == x ]] && return 1 || return 0
-}
-
-exit_on_no_cancel() {
-	if [ $? -eq 1 ]; then
-		exit 0
-	fi
-}
-
-event_mark() {
-	local eventName=$1
-	local eventTime=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-	mkdir -p "/srv/nightscout/data" >>"$LOGTO" 2>&1
-	dotenv-tool -r -i "${EVENTS_DB}" -m "${eventName}=${eventTime}"
-}
-
-join_by() {
-	local d=${1-} f=${2-}
-	if shift 2; then
-		printf %s "$f" "${@/#/$d}"
-	fi
-}
-
-event_label() {
-	case $1 in
-	cleanup)
-		echo "Czyszczenie"
-		;;
-	install)
-		echo "Instalacja"
-		;;
-	update_system)
-		echo "Aktualizacja systemu"
-		;;
-	update_tool)
-		echo "Aktualizacja narzędzia"
-		;;
-	update_containers)
-		echo "Aktualizacja kontenerów"
-		;;
-	uninstall)
-		echo "Odinstalowanie"
-		;;
-	remove_containers)
-		echo "Usunięcie kontenerów"
-		;;
-	remove_db_data)
-		echo "Usunięcie danych bazy"
-		;;
-	remove_all_data)
-		echo "Usunięcie danych"
-		;;
-	change_ns_version)
-		echo "Zmiana wersji Nightscout"
-		;;
-	edit_env_manual)
-		echo "Edycja konfiguracji"
-		;;
-	restart_both)
-		echo "Wymuszony restart NS+DB"
-		;;
-	restart_ns)
-		echo "Wymuszony restart NS"
-		;;
-	last_disk_warning)
-		echo "Brak miejsca"
-		;;
-	last_disk_critical)
-		echo "Krytyczny brak miejsca"
-		;;
-	last_docker_down)
-		echo "Awaria Dockera"
-		;;
-	last_server_restart_needed)
-		echo "Potrzebny restart serwera"
-		;;
-	last_update_needed)
-		echo "Potrzebna aktualizacja"
-		;;
-	*)
-		echo "$1"
-		;;
-	esac
-}
-
-lpad_text() {
-	local inText="$1"
-	local len=${#inText}
-	local spaces="                                                                      "
-	if ((len == 0)); then
-		echo ""
-	else
-		echo "${spaces:0:$(($2 - len))}$1"
-	fi
-}
-
-event_count() {
-	if [ ! -f ${EVENTS_DB} ]; then
-		echo "0"
-	else
-		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")
-		local eventsKeysStr=$(echo "${eventsJSON}" | jq -r ".values | keys[]")
-		local eventsCount=${#eventsKeysStr}
-		if ((eventsCount > 0)); then
-			mapfile -t eventList < <(echo "${eventsKeysStr}")
-			echo "${#eventList[@]}"
-		else
-			echo "0"
-		fi
-	fi
-}
-
-event_list() {
-	if [ ! -f ${EVENTS_DB} ]; then
-		echo "Nie odnotowano zdarzeń"
-	else
-		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")
-		local eventsKeysStr=$(echo "${eventsJSON}" | jq -r ".values | keys[]")
-		local eventsCount=${#eventsKeysStr}
-
-		if ((eventsCount > 0)); then
-			mapfile -t eventList < <(echo "${eventsKeysStr}")
-
-			local namesTab=()
-			local labelsTab=()
-			local valuesTab=()
-			for eventId in "${eventList[@]}"; do
-				mapfile -t -d '_' eventIdSplit <<<"${eventId}"
-				local eventTail=$(echo "${eventIdSplit[-1]}" | tr -d '\n')
-				unset "eventIdSplit[-1]"
-				printf -v eventBase '%s_' "${eventIdSplit[@]}"
-				local eventName="${eventBase%_}"
-				if [ ${#eventIdSplit[@]} -eq 0 ]; then
-					eventName="$eventTail"
-					eventTail=""
-				fi
-
-				if [[ "$eventTail" == "start" ]] || [[ "$eventTail" == "end" ]]; then
-					if [[ ! " ${namesTab[*]} " =~ [[:space:]]${eventName}[[:space:]] ]]; then
-						namesTab+=("${eventName}")
-						local startVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_start")
-						local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_end")
-						local joinedVar="od: $startVar do: $endVar"
-						local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|do): null ?//g")
-						if [[ "$fixedVar" =~ od: ]] && [[ "$fixedVar" =~ do: ]]; then
-							fixedVar=$(echo "$fixedVar" | sed -E -e "s/do:/\ndo:/g")
-						fi
-						fixedVar=$(echo "$fixedVar" | sed -E -e "s/od:/🕓/g")
-						fixedVar=$(echo "$fixedVar" | sed -E -e "s/do:/✅/g")
-						valuesTab+=("$fixedVar")
-					fi
-				else
-					if [[ "$eventTail" == "set" ]] || [[ "$eventTail" == "clear" ]]; then
-						if [[ ! " ${namesTab[*]} " =~ [[:space:]]${eventName}[[:space:]] ]]; then
-							namesTab+=("${eventName}")
-							local startVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_set")
-							local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_clear")
-							local joinedVar="od: $startVar zdjęto: $endVar"
-							local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|zdjęto): null ?//g")
-							if [[ "$fixedVar" =~ od: ]] && [[ "$fixedVar" =~ zdjęto: ]]; then
-								fixedVar=$(echo "$fixedVar" | sed -E -e "s/zdjęto:/\nzdjęto:/g")
-							fi
-							fixedVar=$(echo "$fixedVar" | sed -E -e "s/od:/🚩/g")
-							fixedVar=$(echo "$fixedVar" | sed -E -e "s/zdjęto:/🏁/g")
-							valuesTab+=("$fixedVar")
-						fi
-					else
-						namesTab+=("${eventId}")
-						local exactVar=$(echo "$eventsJSON" | jq -r ".values.${eventId}")
-						valuesTab+=("🕓 $exactVar")
-					fi
-				fi
-			done
-
-			local maxLen=0
-
-			for ((i = 0; i < ${#namesTab[@]}; i++)); do
-				local eventLab="$(event_label "${namesTab[$i]}")"
-				local labelLen=${#eventLab}
-				maxLen=$((labelLen > maxLen ? labelLen : maxLen))
-				labelsTab+=("$eventLab")
-			done
-
-			maxLen=$((maxLen + 1))
-
-			for ((i = 0; i < ${#namesTab[@]}; i++)); do
-				mapfile -t valuesLines <<<"${valuesTab[$i]}"
-				local linesCount=${#valuesLines[@]}
-				if ((linesCount > 1)); then
-					local spaces="                                                                      "
-					echo "$(lpad_text "${labelsTab[$i]}" "$maxLen") = ${valuesLines[0]}"
-					for ((l = 1; l < linesCount; l++)); do
-						echo "${spaces:0:$((maxLen + 3))}${valuesLines[l]}"
-					done
-				else
-					echo "$(lpad_text "${labelsTab[$i]}" "$maxLen") = ${valuesTab[$i]}"
-				fi
-			done
-		else
-			echo "Nie odnotowano zdarzeń"
-		fi
-	fi
-}
-
-get_since_last_time() {
-	local actionName=$1
-	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
-	if [ -f "$actionFile" ]; then
-		local actionLast="$(<"$actionFile")"
-		local nowDate="$(date +'%s')"
-		echo $((nowDate - actionLast))
-	else
-		echo -1
-	fi
-}
-
-set_last_time() {
-	local actionName=$1
-	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
-	local nowDate="$(date +'%s')"
-	echo "$nowDate" >"$actionFile"
-	event_mark "last_${actionName}_set"
-}
-
-clear_last_time() {
-	local actionName=$1
-	local actionFile="${DATA_ROOT_DIR}/last_${actionName}"
-	rm -f "$actionFile"
-	event_mark "last_${actionName}_clear"
-}
-
-#=======================================
-# HELPERS
-#=======================================
-
-echo_progress() {
-	local realProg=$1       # numerical real progress
-	local realMax=$2        # max value of that progress
-	local realStart=$3      # where real progress starts, %
-	local countr=$4         # real ticker, 3 ticks/s
-	local firstPhaseSecs=$5 # how long first, ticked part, last
-
-	if [ "$realProg" -eq "0" ]; then
-		local progrsec=$(((countr * realStart) / (3 * firstPhaseSecs)))
-		if [ "$progrsec" -lt "$realStart" ]; then
-			echo "$progrsec"
-		else
-			echo "$realStart"
-		fi
-	else
-		echo $(((realProg * (100 - realStart) / realMax) + realStart))
-	fi
-}
-
-process_gauge() {
-	local process_to_measure=$1
-	local lenmsg
-	lenmsg=$(echo "$4" | wc -l)
-	eval "$process_to_measure" &
-	local thepid=$!
-	local num=1
-	while true; do
-		echo 0
-		while kill -0 "$thepid" >/dev/null 2>&1; do
-			eval "$2" "$num"
-			num=$((num + 1))
-			sleep 0.3
-		done
-		echo 100
-		break
-	done | whiptail --title "$3" --gauge "\n  $4\n" $((lenmsg + 6)) 70 0
-}
-
-download_if_not_exists() {
-	if [[ -f $2 ]]; then
-		msgok "Found $1"
-	else
-		ohai "Downloading $1..."
-		curl -fsSL -o "$2" "$3"
-		msgcheck "Downloaded $1"
-	fi
-}
-
-center_text() {
-	local inText="$1"
-	local len=${#inText}
-	local spaces="                                                                                                     "
-	if ((len == 0)); then
-		echo ""
-	else
-		echo "${spaces:0:$((($2 - len) / 2))}$1"
-	fi
-}
-
-rpad_text() {
-	local inText="$1"
-	local len=${#inText}
-	local spaces="                                                                                                     "
-	if ((len == 0)); then
-		echo ""
-	else
-		local padSize=$(($2 - len))
-		echo "$1${spaces:0:${padSize}}"
-	fi
-}
-
-multiline_length() {
-	local string=$1
-	local maxLen=0
-	# shellcheck disable=SC2059
-	readarray -t array <<<"$(printf "$string")"
-	for i in "${!array[@]}"; do
-		local line=${array[i]}
-		lineLen=${#line}
-		if [ "$lineLen" -gt "$maxLen" ]; then
-			maxLen="$lineLen"
-		fi
-	done
-
-	echo "$maxLen"
-}
-
-center_multiline() {
-	local maxLen=70
-	local string="$*"
-
-	if [ $# -gt 1 ]; then
-		maxLen=$1
-		shift 1
-		string="$*"
-	else
-		maxLen=$(multiline_length "$string")
-	fi
-
-	# shellcheck disable=SC2059
-	readarray -t array <<<"$(printf "$string")"
-	for i in "${!array[@]}"; do
-		local line=${array[i]}
-		# shellcheck disable=SC2005
-		echo "$(center_text "$line" "$maxLen")"
-	done
-}
-
-pad_multiline() {
-
-	local string="$*"
-	local maxLen=$(multiline_length "$string")
-
-	# shellcheck disable=SC2059
-	readarray -t array <<<"$(printf "$string")"
-	for i in "${!array[@]}"; do
-		local line=${array[i]}
-		# shellcheck disable=SC2005
-		echo "$(rpad_text "$line" "$maxLen")"
-	done
-}
-
-okdlg() {
-	local title=$1
-	shift 1
-	local msg="$*"
-	local lcount=$(echo -e "$msg" | grep -c '^')
-	local width=$(multiline_length "$msg")
-	whiptail --title "$title" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
-}
-
-confirmdlg() {
-	local title=$1
-	local btnlabel=$2
-	shift 2
-	local msg="$*"
-	local lcount=$(echo -e "$msg" | grep -c '^')
-	local width=$(multiline_length "$msg")
-	whiptail --title "$title" --ok-button "$btnlabel" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
-}
-
-yesnodlg() {
-	yesnodlg_base "y" "$@"
-}
-
-noyesdlg() {
-	yesnodlg_base "n" "$@"
-}
-
-yesnodlg_base() {
-	local defaultbtn=$1
-	local title=$2
-	local ybtn=$3
-	local nbtn=$4
-	shift 4
-	local msg="$*"
-	# shellcheck disable=SC2059
-	local linec=$(printf "$msg" | grep -c '^')
-	local width=$(multiline_length "$msg")
-	local ylen=${#ybtn}
-	local nlen=${#nbtn}
-	# we need space for all < > around buttons
-	local minbtn=$((ylen + nlen + 6))
-	# minimal nice width of dialog
-	local minlen=$((minbtn > 15 ? minbtn : 15))
-	local mwidth=$((minlen > width ? minlen : width))
-
-	# whiptail has bug, buttons are NOT centered
-	local rpad=$((width < minbtn ? (nlen - 2) + ((nlen - 2) / 2) : 4))
-	local padw=$((mwidth + rpad))
-
-	if [[ "$defaultbtn" == "y" ]]; then
-		whiptail --title "$title" --yesno "$(center_multiline "$padw" "$msg")" \
-			--yes-button "$ybtn" --no-button "$nbtn" \
-			$((linec + 7)) $((padw + 4))
-	else
-		whiptail --title "$title" --yesno --defaultno "$(center_multiline "$padw" "$msg")" \
-			--yes-button "$ybtn" --no-button "$nbtn" \
-			$((linec + 7)) $((padw + 4))
-	fi
-}
+#include screen_config.sh
+#include screen_formaters.sh
+#include utils_console.sh
+#include utils.sh
+#include utils_string.sh
+#include screen_dialogs.sh
 
 #=======================================
 # VARIABLES
@@ -670,6 +86,17 @@ forceUpdateCheck=0
 
 MIKRUS_APIKEY=''
 MIKRUS_HOST=''
+
+#dev-begin
+#=======================================
+# IMPORTS - app specific
+#=======================================
+
+# shellcheck source=/dev/null
+. "$DIR/logic_events.sh"
+#dev-end
+
+#include logic_events.sh
 
 #=======================================
 # ACTIONS AND STEPS
@@ -911,7 +338,7 @@ setup_security() {
 setup_packages() {
 	# shellcheck disable=SC2145
 	# shellcheck disable=SC2068
-	(ifIsSet packages && setup_update_repo &&
+	(if_is_set packages && setup_update_repo &&
 		ohai "Installing packages: ${packages[@]}" &&
 		apt-get -yq install ${packages[@]} >>"$LOGTO" 2>&1 &&
 		msgcheck "Install successfull") || msgok "All required packages already installed"
@@ -1088,6 +515,16 @@ source_admin() {
 		# shellcheck disable=SC1090
 		source "$ENV_FILE_ADMIN"
 		msgok "Imported admin config"
+	fi
+}
+
+download_if_not_exists() {
+	if [[ -f $2 ]]; then
+		msgok "Found $1"
+	else
+		ohai "Downloading $1..."
+		curl -fsSL -o "$2" "$3"
+		msgcheck "Downloaded $1"
 	fi
 }
 

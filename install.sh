@@ -1,6 +1,6 @@
 #!/bin/bash
 
-### version: 1.10.1
+### version: 1.10.2
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
@@ -54,8 +54,17 @@ DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
-SCRIPT_VERSION="1.10.1"          #auto-update
-SCRIPT_BUILD_TIME="2026.01.04"  #auto-update
+SCRIPT_VERSION="1.10.2"          #auto-update
+SCRIPT_BUILD_TIME="2026.01.05"  #auto-update
+
+#=======================================
+# DOWNLOAD CONFIG
+#=======================================
+
+GITHUB_BASE_URL="https://raw.githubusercontent.com/dlvoy/mikrus-installer"
+GITEA_BASE_URL="https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch"
+GITHUB_UNAVAILABLE=""  # Empty string = GitHub is available, set to "1" if GitHub fails
+
 
 #=======================================
 # SETUP
@@ -122,6 +131,8 @@ if [[ -n "${POSIXLY_CORRECT+1}" ]]; then
 	abort 'Bash must not run in POSIX mode. Please unset POSIXLY_CORRECT and try again.'
 fi
 
+
+
 #=======================================
 # FORMATERS
 #=======================================
@@ -177,8 +188,10 @@ uni_leave_logs=" $(printf '\U1F4DC') Zostaw "
 uni_ns_ok="$(printf '\U1F7E2') działa"
 uni_watchdog_ok="$(printf '\U1F415') Nightscout działa"
 
+
+
 #=======================================
-# UTILS
+# CONSOLE OUTPUT UTILS
 #=======================================
 
 shell_join() {
@@ -223,6 +236,12 @@ warn() {
 	printf "${tty_red}Warning${tty_reset}: %s\n" "$(chomp "$1")" >&2
 }
 
+
+
+#=======================================
+# UTILS
+#=======================================
+
 # Search for the given executable in PATH (avoids a dependency on the `which` command)
 which() {
 	# Alias to Bash built-in command `type -P`
@@ -246,7 +265,7 @@ version_lt() {
 	[[ "${1%.*}" -lt "${2%.*}" ]] || [[ "${1%.*}" -eq "${2%.*}" && "${1#*.}" -lt "${2#*.}" ]]
 }
 
-ifIsSet() {
+if_is_set() {
 	[[ ${!1-x} == x ]] && return 1 || return 0
 }
 
@@ -256,18 +275,236 @@ exit_on_no_cancel() {
 	fi
 }
 
-event_mark() {
-	local eventName=$1
-	local eventTime=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-	mkdir -p "/srv/nightscout/data" >>"$LOGTO" 2>&1
-	dotenv-tool -r -i "${EVENTS_DB}" -m "${eventName}=${eventTime}"
-}
+
+
+#=======================================
+# STRING UTILS
+#=======================================
 
 join_by() {
 	local d=${1-} f=${2-}
 	if shift 2; then
 		printf %s "$f" "${@/#/$d}"
 	fi
+}
+
+lpad_text() {
+	local inText="$1"
+	local len=${#inText}
+	local spaces="                                                                      "
+	if ((len == 0)); then
+		echo ""
+	else
+		echo "${spaces:0:$(($2 - len))}$1"
+	fi
+}
+
+center_text() {
+	local inText="$1"
+	local len=${#inText}
+	local spaces="                                                                                                     "
+	if ((len == 0)); then
+		echo ""
+	else
+		echo "${spaces:0:$((($2 - len) / 2))}$1"
+	fi
+}
+
+rpad_text() {
+	local inText="$1"
+	local len=${#inText}
+	local spaces="                                                                                                     "
+	if ((len == 0)); then
+		echo ""
+	else
+		local padSize=$(($2 - len))
+		echo "$1${spaces:0:${padSize}}"
+	fi
+}
+
+multiline_length() {
+	local string=$1
+	local maxLen=0
+	# shellcheck disable=SC2059
+	readarray -t array <<<"$(printf "$string")"
+	for i in "${!array[@]}"; do
+		local line=${array[i]}
+		lineLen=${#line}
+		if [ "$lineLen" -gt "$maxLen" ]; then
+			maxLen="$lineLen"
+		fi
+	done
+
+	echo "$maxLen"
+}
+
+center_multiline() {
+	local maxLen=70
+	local string="$*"
+
+	if [ $# -gt 1 ]; then
+		maxLen=$1
+		shift 1
+		string="$*"
+	else
+		maxLen=$(multiline_length "$string")
+	fi
+
+	# shellcheck disable=SC2059
+	readarray -t array <<<"$(printf "$string")"
+	for i in "${!array[@]}"; do
+		local line=${array[i]}
+		# shellcheck disable=SC2005
+		echo "$(center_text "$line" "$maxLen")"
+	done
+}
+
+pad_multiline() {
+
+	local string="$*"
+	local maxLen=$(multiline_length "$string")
+
+	# shellcheck disable=SC2059
+	readarray -t array <<<"$(printf "$string")"
+	for i in "${!array[@]}"; do
+		local line=${array[i]}
+		# shellcheck disable=SC2005
+		echo "$(rpad_text "$line" "$maxLen")"
+	done
+}
+
+
+
+#=======================================
+# SCREEN DIALOGS
+#=======================================
+
+echo_progress() {
+	local realProg=$1       # numerical real progress
+	local realMax=$2        # max value of that progress
+	local realStart=$3      # where real progress starts, %
+	local countr=$4         # real ticker, 3 ticks/s
+	local firstPhaseSecs=$5 # how long first, ticked part, last
+
+	if [ "$realProg" -eq "0" ]; then
+		local progrsec=$(((countr * realStart) / (3 * firstPhaseSecs)))
+		if [ "$progrsec" -lt "$realStart" ]; then
+			echo "$progrsec"
+		else
+			echo "$realStart"
+		fi
+	else
+		echo $(((realProg * (100 - realStart) / realMax) + realStart))
+	fi
+}
+
+process_gauge() {
+	local process_to_measure=$1
+	local lenmsg
+	lenmsg=$(echo "$4" | wc -l)
+	eval "$process_to_measure" &
+	local thepid=$!
+	local num=1
+	while true; do
+		echo 0
+		while kill -0 "$thepid" >/dev/null 2>&1; do
+			eval "$2" "$num"
+			num=$((num + 1))
+			sleep 0.3
+		done
+		echo 100
+		break
+	done | whiptail --title "$3" --gauge "\n  $4\n" $((lenmsg + 6)) 70 0
+}
+
+okdlg() {
+	local title=$1
+	shift 1
+	local msg="$*"
+	local lcount=$(echo -e "$msg" | grep -c '^')
+	local width=$(multiline_length "$msg")
+	whiptail --title "$title" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
+}
+
+confirmdlg() {
+	local title=$1
+	local btnlabel=$2
+	shift 2
+	local msg="$*"
+	local lcount=$(echo -e "$msg" | grep -c '^')
+	local width=$(multiline_length "$msg")
+	whiptail --title "$title" --ok-button "$btnlabel" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
+}
+
+yesnodlg() {
+	yesnodlg_base "y" "$@"
+}
+
+noyesdlg() {
+	yesnodlg_base "n" "$@"
+}
+
+yesnodlg_base() {
+	local defaultbtn=$1
+	local title=$2
+	local ybtn=$3
+	local nbtn=$4
+	shift 4
+	local msg="$*"
+	# shellcheck disable=SC2059
+	local linec=$(printf "$msg" | grep -c '^')
+	local width=$(multiline_length "$msg")
+	local ylen=${#ybtn}
+	local nlen=${#nbtn}
+	# we need space for all < > around buttons
+	local minbtn=$((ylen + nlen + 6))
+	# minimal nice width of dialog
+	local minlen=$((minbtn > 15 ? minbtn : 15))
+	local mwidth=$((minlen > width ? minlen : width))
+
+	# whiptail has bug, buttons are NOT centered
+	local rpad=$((width < minbtn ? (nlen - 2) + ((nlen - 2) / 2) : 4))
+	local padw=$((mwidth + rpad))
+
+	if [[ "$defaultbtn" == "y" ]]; then
+		whiptail --title "$title" --yesno "$(center_multiline "$padw" "$msg")" \
+			--yes-button "$ybtn" --no-button "$nbtn" \
+			$((linec + 7)) $((padw + 4))
+	else
+		whiptail --title "$title" --yesno --defaultno "$(center_multiline "$padw" "$msg")" \
+			--yes-button "$ybtn" --no-button "$nbtn" \
+			$((linec + 7)) $((padw + 4))
+	fi
+}
+
+
+
+
+#=======================================
+# VARIABLES
+#=======================================
+
+packages=()
+aptGetWasUpdated=0
+freshInstall=0
+cachedMenuDomain=''
+lastTimeSpaceInfo=0
+diagnosticsSizeOk=0
+forceUpdateCheck=0
+
+MIKRUS_APIKEY=''
+MIKRUS_HOST=''
+
+
+#=======================================
+# EVENTS MARKERS LOGIC
+#=======================================
+
+event_mark() {
+	local eventName=$1
+	local eventTime=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	mkdir -p "/srv/nightscout/data" >>"$LOGTO" 2>&1
+	dotenv-tool -r -i "${EVENTS_DB}" -m "${eventName}=${eventTime}"
 }
 
 event_label() {
@@ -330,17 +567,6 @@ event_label() {
 		echo "$1"
 		;;
 	esac
-}
-
-lpad_text() {
-	local inText="$1"
-	local len=${#inText}
-	local spaces="                                                                      "
-	if ((len == 0)); then
-		echo ""
-	else
-		echo "${spaces:0:$(($2 - len))}$1"
-	fi
 }
 
 event_count() {
@@ -478,206 +704,8 @@ clear_last_time() {
 	event_mark "last_${actionName}_clear"
 }
 
-#=======================================
-# HELPERS
-#=======================================
 
-echo_progress() {
-	local realProg=$1       # numerical real progress
-	local realMax=$2        # max value of that progress
-	local realStart=$3      # where real progress starts, %
-	local countr=$4         # real ticker, 3 ticks/s
-	local firstPhaseSecs=$5 # how long first, ticked part, last
 
-	if [ "$realProg" -eq "0" ]; then
-		local progrsec=$(((countr * realStart) / (3 * firstPhaseSecs)))
-		if [ "$progrsec" -lt "$realStart" ]; then
-			echo "$progrsec"
-		else
-			echo "$realStart"
-		fi
-	else
-		echo $(((realProg * (100 - realStart) / realMax) + realStart))
-	fi
-}
-
-process_gauge() {
-	local process_to_measure=$1
-	local lenmsg
-	lenmsg=$(echo "$4" | wc -l)
-	eval "$process_to_measure" &
-	local thepid=$!
-	local num=1
-	while true; do
-		echo 0
-		while kill -0 "$thepid" >/dev/null 2>&1; do
-			eval "$2" "$num"
-			num=$((num + 1))
-			sleep 0.3
-		done
-		echo 100
-		break
-	done | whiptail --title "$3" --gauge "\n  $4\n" $((lenmsg + 6)) 70 0
-}
-
-download_if_not_exists() {
-	if [[ -f $2 ]]; then
-		msgok "Found $1"
-	else
-		ohai "Downloading $1..."
-		curl -fsSL -o "$2" "$3"
-		msgcheck "Downloaded $1"
-	fi
-}
-
-center_text() {
-	local inText="$1"
-	local len=${#inText}
-	local spaces="                                                                                                     "
-	if ((len == 0)); then
-		echo ""
-	else
-		echo "${spaces:0:$((($2 - len) / 2))}$1"
-	fi
-}
-
-rpad_text() {
-	local inText="$1"
-	local len=${#inText}
-	local spaces="                                                                                                     "
-	if ((len == 0)); then
-		echo ""
-	else
-		local padSize=$(($2 - len))
-		echo "$1${spaces:0:${padSize}}"
-	fi
-}
-
-multiline_length() {
-	local string=$1
-	local maxLen=0
-	# shellcheck disable=SC2059
-	readarray -t array <<<"$(printf "$string")"
-	for i in "${!array[@]}"; do
-		local line=${array[i]}
-		lineLen=${#line}
-		if [ "$lineLen" -gt "$maxLen" ]; then
-			maxLen="$lineLen"
-		fi
-	done
-
-	echo "$maxLen"
-}
-
-center_multiline() {
-	local maxLen=70
-	local string="$*"
-
-	if [ $# -gt 1 ]; then
-		maxLen=$1
-		shift 1
-		string="$*"
-	else
-		maxLen=$(multiline_length "$string")
-	fi
-
-	# shellcheck disable=SC2059
-	readarray -t array <<<"$(printf "$string")"
-	for i in "${!array[@]}"; do
-		local line=${array[i]}
-		# shellcheck disable=SC2005
-		echo "$(center_text "$line" "$maxLen")"
-	done
-}
-
-pad_multiline() {
-
-	local string="$*"
-	local maxLen=$(multiline_length "$string")
-
-	# shellcheck disable=SC2059
-	readarray -t array <<<"$(printf "$string")"
-	for i in "${!array[@]}"; do
-		local line=${array[i]}
-		# shellcheck disable=SC2005
-		echo "$(rpad_text "$line" "$maxLen")"
-	done
-}
-
-okdlg() {
-	local title=$1
-	shift 1
-	local msg="$*"
-	local lcount=$(echo -e "$msg" | grep -c '^')
-	local width=$(multiline_length "$msg")
-	whiptail --title "$title" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
-}
-
-confirmdlg() {
-	local title=$1
-	local btnlabel=$2
-	shift 2
-	local msg="$*"
-	local lcount=$(echo -e "$msg" | grep -c '^')
-	local width=$(multiline_length "$msg")
-	whiptail --title "$title" --ok-button "$btnlabel" --msgbox "$(center_multiline $((width + 4)) "$msg")" $((lcount + 6)) $((width + 9))
-}
-
-yesnodlg() {
-	yesnodlg_base "y" "$@"
-}
-
-noyesdlg() {
-	yesnodlg_base "n" "$@"
-}
-
-yesnodlg_base() {
-	local defaultbtn=$1
-	local title=$2
-	local ybtn=$3
-	local nbtn=$4
-	shift 4
-	local msg="$*"
-	# shellcheck disable=SC2059
-	local linec=$(printf "$msg" | grep -c '^')
-	local width=$(multiline_length "$msg")
-	local ylen=${#ybtn}
-	local nlen=${#nbtn}
-	# we need space for all < > around buttons
-	local minbtn=$((ylen + nlen + 6))
-	# minimal nice width of dialog
-	local minlen=$((minbtn > 15 ? minbtn : 15))
-	local mwidth=$((minlen > width ? minlen : width))
-
-	# whiptail has bug, buttons are NOT centered
-	local rpad=$((width < minbtn ? (nlen - 2) + ((nlen - 2) / 2) : 4))
-	local padw=$((mwidth + rpad))
-
-	if [[ "$defaultbtn" == "y" ]]; then
-		whiptail --title "$title" --yesno "$(center_multiline "$padw" "$msg")" \
-			--yes-button "$ybtn" --no-button "$nbtn" \
-			$((linec + 7)) $((padw + 4))
-	else
-		whiptail --title "$title" --yesno --defaultno "$(center_multiline "$padw" "$msg")" \
-			--yes-button "$ybtn" --no-button "$nbtn" \
-			$((linec + 7)) $((padw + 4))
-	fi
-}
-
-#=======================================
-# VARIABLES
-#=======================================
-
-packages=()
-aptGetWasUpdated=0
-freshInstall=0
-cachedMenuDomain=''
-lastTimeSpaceInfo=0
-diagnosticsSizeOk=0
-forceUpdateCheck=0
-
-MIKRUS_APIKEY=''
-MIKRUS_HOST=''
 
 #=======================================
 # ACTIONS AND STEPS
@@ -729,6 +757,19 @@ add_if_not_ok_cmd() {
 	fi
 }
 
+add_if_not_ok_compose() {
+	local RESULT=$?
+	if [ "$RESULT" -eq 0 ]; then
+		msgcheck "$1 installed"
+	else
+		ohai "Installing $1..."
+    mkdir -p "~/.docker/cli-plugins" >> "$LOGTO" 2>&1
+    curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o "~/.docker/cli-plugins/docker-compose" >> "$LOGTO" 2>&1
+    chmod +x "~/.docker/cli-plugins/docker-compose" >> "$LOGTO" 2>&1 
+    msgcheck "Installing $1 successfull"
+	fi
+}
+
 check_git() {
 	git --version >/dev/null 2>&1
 	add_if_not_ok "GIT" "git"
@@ -740,8 +781,8 @@ check_docker() {
 }
 
 check_docker_compose() {
-	docker compose -v >/dev/null 2>&1
-	add_if_not_ok "Docker compose" "docker-compose"
+	docker compose version >/dev/null 2>&1
+	add_if_not_ok_compose "Docker compose"
 }
 
 patch_docker_compose() {
@@ -906,7 +947,7 @@ setup_security() {
 setup_packages() {
 	# shellcheck disable=SC2145
 	# shellcheck disable=SC2068
-	(ifIsSet packages && setup_update_repo &&
+	(if_is_set packages && setup_update_repo &&
 		ohai "Installing packages: ${packages[@]}" &&
 		apt-get -yq install ${packages[@]} >>"$LOGTO" 2>&1 &&
 		msgcheck "Install successfull") || msgok "All required packages already installed"
@@ -1083,6 +1124,16 @@ source_admin() {
 		# shellcheck disable=SC1090
 		source "$ENV_FILE_ADMIN"
 		msgok "Imported admin config"
+	fi
+}
+
+download_if_not_exists() {
+	if [[ -f $2 ]]; then
+		msgok "Found $1"
+	else
+		ohai "Downloading $1..."
+		curl -fsSL -o "$2" "$3"
+		msgcheck "Downloaded $1"
 	fi
 }
 
@@ -3027,6 +3078,8 @@ parse_commandline_args() {
 	fi
 
 }
+
+
 
 
 #=======================================

@@ -153,23 +153,3 @@ MIKRUS_HOST=''
 #include app_diagnostics.sh
 #include app_main.sh
 
-#=======================================
-# ACTIONS AND STEPS
-#=======================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

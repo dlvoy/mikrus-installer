@@ -2,6 +2,14 @@
 # APP LOGIC
 #=======================================
 
+update_logto() {
+	if [[ "$UPDATE_CHANNEL" == "develop" ]]; then
+		LOGTO="$DEBUG_LOG_FILE"
+	else
+		LOGTO=/dev/null
+	fi
+}
+
 get_td_domain() {
 	local MHOST=$(hostname)
 	if ! [[ "$MHOST" =~ [a-zA-Z]{2,16}[0-9]{3} ]]; then
@@ -29,6 +37,7 @@ load_update_channel() {
 	if [[ -f $UPDATE_CHANNEL_FILE ]]; then
 		UPDATE_CHANNEL=$(cat "$UPDATE_CHANNEL_FILE")
 		msgok "Loaded update channel: $UPDATE_CHANNEL"
+		update_logto
 	fi
 }
 

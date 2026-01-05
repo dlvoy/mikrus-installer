@@ -33,6 +33,7 @@ parse_commandline_args() {
 			UPDATE_CHANNEL=develop
 			forceUpdateCheck=1
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
+			update_logto
 			shift
 			;;
 		-p | --production)
@@ -40,6 +41,7 @@ parse_commandline_args() {
 			UPDATE_CHANNEL=master
 			forceUpdateCheck=1
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
+			update_logto
 			shift
 			;;
 		-u | --update)
@@ -60,6 +62,7 @@ parse_commandline_args() {
 			warn "Switching to $UPDATE_CHANNEL_CANDIDATE update channel"
 			UPDATE_CHANNEL="$UPDATE_CHANNEL_CANDIDATE"
 			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
+			update_logto
 			shift
 			;;
 		--)

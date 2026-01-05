@@ -28,12 +28,12 @@ download_file() {
 
 	local url=$(get_url_branch "$branch" "$path")
 
-	if ! curl -fsSL -o "$target" "$url"; then
+	if ! curl -fsSL -o "$target" "$url" 2>>"$LOGTO"; then
 		if [[ -z "$GITHUB_UNAVAILABLE" ]]; then
 			mark_github_unavailable
 			url=$(get_url_branch "$branch" "$path")
 			ohai "GitHub failed, retrying with Gitea ($label)..."
-			curl -fsSL -o "$target" "$url"
+			curl -fsSL -o "$target" "$url" 2>>"$LOGTO"
 		else
 			return 1
 		fi
@@ -91,13 +91,13 @@ download_updates() {
 	ohai "Downloading updated scripts and config files"
 
 	local url=$(get_url "updated")
-	local onlineUpdated=$(curl -fsSL "$url")
+	local onlineUpdated=$(curl -fsSL "$url" 2>>"$LOGTO")
 
 	if [[ -z "$onlineUpdated" && -z "$GITHUB_UNAVAILABLE" ]]; then
 		mark_github_unavailable
 		url=$(get_url "updated")
 		ohai "GitHub failed, retrying with Gitea (update check)..."
-		onlineUpdated=$(curl -fsSL "$url")
+		onlineUpdated=$(curl -fsSL "$url" 2>>"$LOGTO")
 	fi
 
 	if [ ! "$onlineUpdated" == "" ]; then
@@ -122,13 +122,13 @@ download_if_needed() {
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."
 		local url=$(get_url "updated")
-		local onlineUpdated=$(curl -fsSL "$url")
+		local onlineUpdated=$(curl -fsSL "$url" 2>>"$LOGTO")
 
 		if [[ -z "$onlineUpdated" && -z "$GITHUB_UNAVAILABLE" ]]; then
 			mark_github_unavailable
 			url=$(get_url "updated")
 			ohai "GitHub failed, retrying with Gitea (version check)..."
-			onlineUpdated=$(curl -fsSL "$url")
+			onlineUpdated=$(curl -fsSL "$url" 2>>"$LOGTO")
 		fi
 
 		local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded")

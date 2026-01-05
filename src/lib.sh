@@ -7,7 +7,8 @@
 
 REQUIRED_NODE_VERSION=18.0.0
 REQUIRED_DOTENV_VERSION=1.3.0
-LOGTO=/srv/nightscout/data/debug.log
+LOGTO=/dev/null
+DEBUG_LOG_FILE=/srv/nightscout/data/debug.log
 NIGHTSCOUT_ROOT_DIR=/srv/nightscout
 CONFIG_ROOT_DIR=/srv/nightscout/config
 DATA_ROOT_DIR=/srv/nightscout/data

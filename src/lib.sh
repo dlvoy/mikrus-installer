@@ -105,6 +105,7 @@ MIKRUS_HOST=''
 . "$DIR/logic_cleanup.sh"
 . "$DIR/logic_config.sh"
 . "$DIR/logic_update.sh"
+. "$DIR/logic_diagnostics.sh"
 . "$DIR/logic_app.sh"
 
 . "$DIR/app_other_dialogs.sh"
@@ -118,6 +119,7 @@ MIKRUS_HOST=''
 . "$DIR/app_cleanup.sh"
 . "$DIR/app_config.sh"
 . "$DIR/app_update.sh"
+. "$DIR/app_diagnostics.sh"
 . "$DIR/app_main.sh"
 
 #dev-end

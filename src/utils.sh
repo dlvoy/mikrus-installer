@@ -15,6 +15,15 @@ major_minor() {
 	)"
 }
 
+extract_version() {
+	regex='version:\s+([0-9]+\.[0-9]+\.[0-9]+)'
+	if [[ "$1" =~ $regex ]]; then
+		echo "${BASH_REMATCH[1]}"
+	else
+		echo "0.0.0"
+	fi
+}
+
 version_gt() {
 	[[ "${1%.*}" -gt "${2%.*}" ]] || [[ "${1%.*}" -eq "${2%.*}" && "${1#*.}" -gt "${2#*.}" ]]
 }
@@ -32,5 +41,27 @@ if_is_set() {
 exit_on_no_cancel() {
 	if [ $? -eq 1 ]; then
 		exit 0
+	fi
+}
+
+check_interactive() {
+	shopt -q login_shell && echo 'Login shell' || echo 'Not login shell'
+
+	# if [[ $- == *i* ]]; then
+	#   msgok "Interactive setup"
+	# else
+	#    msgok "Non-interactive setup"
+	# fi
+}
+
+read_or_default() {
+	if [ -f "$1" ]; then
+		cat "$1"
+	else
+		if [ $# -eq 2 ]; then
+			echo "$2"
+		else
+			echo ""
+		fi
 	fi
 }

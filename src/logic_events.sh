@@ -205,3 +205,16 @@ clear_last_time() {
 	rm -f "$actionFile"
 	event_mark "last_${actionName}_clear"
 }
+
+get_events_status() {
+	local count="$(event_count)"
+	if ((count == 0)); then
+		printf "\U2728 brak zdarzeń"
+	elif ((count == 1)); then
+		printf "\U1F4C5 jedno zdarzenie"
+	elif (((count % 10) > 1)) && (((count % 10) < 5)); then
+		printf "\U1F4C5 %s zdarzenia" "$count"
+	else
+		printf "\U1F4C5 %s zdarzeń" "$count"
+	fi
+}

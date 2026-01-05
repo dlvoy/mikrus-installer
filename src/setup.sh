@@ -1,17 +1,19 @@
 #!/bin/bash
 
-### version: 1.9.5
+### version: 1.10.1
 
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 #    Nightscout Mikr.us setup script    #
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
-#      (c)2025 by Dominik Dzienia       #
+#    (c)2023-2026 by Dominik Dzienia    #
 #      <dominik.dzienia@gmail.com>      #
 #      Licensed under MIT license       #
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
 # Some functions / concepts taken from: #
 #   https://github.com/Homebrew/brew    #
 # ~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.#
+
+###autogen-warning
 
 #dev-begin
 DIR="${BASH_SOURCE%/*}"

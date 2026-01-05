@@ -94,6 +94,7 @@ MIKRUS_HOST=''
 
 # shellcheck source=/dev/null
 . "$DIR/logic_events.sh"
+. "$DIR/logic_setup.sh"
 . "$DIR/logic_setup_checks.sh"
 . "$DIR/logic_patch.sh"
 . "$DIR/logic_docker.sh"
@@ -122,6 +123,7 @@ MIKRUS_HOST=''
 #dev-end
 
 #include logic_events.sh
+#include logic_setup.sh
 #include logic_setup_checks.sh
 #include logic_patch.sh
 #include logic_docker.sh

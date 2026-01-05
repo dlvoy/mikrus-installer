@@ -2,36 +2,83 @@
 # UPGRADE
 #=======================================
 
-download_if_not_exists() {
-	if [[ -f $2 ]]; then
-		msgok "Found $1"
+mark_github_unavailable() {
+	GITHUB_UNAVAILABLE="1"
+}
+
+get_url_branch() {
+	local branch="$1"
+	local path="$2"
+	if [[ -n "$GITHUB_UNAVAILABLE" ]]; then
+		echo "${GITEA_BASE_URL}/${branch}/${path}"
 	else
-		ohai "Downloading $1..."
-		curl -fsSL -o "$2" "$3"
-		msgcheck "Downloaded $1"
+		echo "${GITHUB_BASE_URL}/${branch}/${path}"
+	fi
+}
+
+get_url() {
+	get_url_branch "$UPDATE_CHANNEL" "$1"
+}
+
+download_file() {
+	local label="$1"
+	local target="$2"
+	local path="$3"
+	local branch="${4:-$UPDATE_CHANNEL}"
+
+	local url=$(get_url_branch "$branch" "$path")
+
+	if ! curl -fsSL -o "$target" "$url"; then
+		if [[ -z "$GITHUB_UNAVAILABLE" ]]; then
+			mark_github_unavailable
+			url=$(get_url_branch "$branch" "$path")
+			ohai "GitHub failed, retrying with Gitea ($label)..."
+			curl -fsSL -o "$target" "$url"
+		else
+			return 1
+		fi
+	fi
+}
+
+download_if_not_exists() {
+	local label="$1"
+	local target="$2"
+	local path="$3"
+	local branch="${4:-$UPDATE_CHANNEL}"
+
+	if [[ -f "$target" ]]; then
+		msgok "Found $label"
+	else
+		ohai "Downloading $label..."
+		if download_file "$label" "$target" "$path" "$branch"; then
+			msgcheck "Downloaded $label"
+		else
+			msgerr "Failed to download $label"
+			return 1
+		fi
 	fi
 }
 
 download_conf() {
-	download_if_not_exists "deployment config" "$ENV_FILE_DEP" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
-	download_if_not_exists "nightscout config" "$ENV_FILE_NS" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
-	download_if_not_exists "docker compose file" "$DOCKER_COMPOSE_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
-	download_if_not_exists "profanity database" "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
-	download_if_not_exists "reservation database" "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
+	download_if_not_exists "deployment config" "$ENV_FILE_DEP" "templates/deployment.env"
+	download_if_not_exists "nightscout config" "$ENV_FILE_NS" "templates/nightscout.env"
+	download_if_not_exists "docker compose file" "$DOCKER_COMPOSE_FILE" "templates/docker-compose.yml"
+	download_if_not_exists "profanity database" "$PROFANITY_DB_FILE" "templates/profanity.db" "profanity"
+	download_if_not_exists "reservation database" "$RESERVED_DB_FILE" "templates/reserved.db" "profanity"
 }
 
 download_tools() {
-	download_if_not_exists "update stamp" "$UPDATES_DIR/updated" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated"
+	download_if_not_exists "update stamp" "$UPDATES_DIR/updated" "updated"
 
-	if ! [[ -f $TOOL_FILE ]]; then
-		download_if_not_exists "nightscout-tool file" "$TOOL_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
+	if ! [[ -f "$TOOL_FILE" ]]; then
+		download_if_not_exists "nightscout-tool file" "$TOOL_FILE" "install.sh"
 		local timestamp=$(date +%s)
 		echo "$timestamp" >"$UPDATES_DIR/timestamp"
 	else
 		msgok "Found nightscout-tool"
 	fi
 
-	if ! [[ -f $TOOL_LINK ]]; then
+	if ! [[ -f "$TOOL_LINK" ]]; then
 		ohai "Linking nightscout-tool"
 		ln -s "$TOOL_FILE" "$TOOL_LINK"
 	fi
@@ -42,14 +89,24 @@ download_tools() {
 
 download_updates() {
 	ohai "Downloading updated scripts and config files"
-	local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
+
+	local url=$(get_url "updated")
+	local onlineUpdated=$(curl -fsSL "$url")
+
+	if [[ -z "$onlineUpdated" && -z "$GITHUB_UNAVAILABLE" ]]; then
+		mark_github_unavailable
+		url=$(get_url "updated")
+		ohai "GitHub failed, retrying with Gitea (update check)..."
+		onlineUpdated=$(curl -fsSL "$url")
+	fi
+
 	if [ ! "$onlineUpdated" == "" ]; then
-		curl -fsSL -o "$UPDATES_DIR/install.sh" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/install.sh"
-		curl -fsSL -o "$UPDATES_DIR/deployment.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/deployment.env"
-		curl -fsSL -o "$UPDATES_DIR/nightscout.env" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/nightscout.env"
-		curl -fsSL -o "$UPDATES_DIR/docker-compose.yml" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/templates/docker-compose.yml"
-		curl -fsSL -o "$PROFANITY_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/profanity.db"
-		curl -fsSL -o "$RESERVED_DB_FILE" "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/profanity/templates/reserved.db"
+		download_file "install script" "$UPDATES_DIR/install.sh" "install.sh"
+		download_file "deployment info" "$UPDATES_DIR/deployment.env" "templates/deployment.env"
+		download_file "nightscout info" "$UPDATES_DIR/nightscout.env" "templates/nightscout.env"
+		download_file "docker compose" "$UPDATES_DIR/docker-compose.yml" "templates/docker-compose.yml"
+		download_file "profanity db" "$PROFANITY_DB_FILE" "templates/profanity.db" "profanity"
+		download_file "reserved db" "$RESERVED_DB_FILE" "templates/reserved.db" "profanity"
 	else
 		onlineUpdated="error"
 	fi
@@ -64,7 +121,16 @@ download_if_needed() {
 	if (((timestampNow - lastCheck) > updateCheck)) || [ "$lastDownload" == "" ] || [ "$lastDownload" == "error" ] || ((forceUpdateCheck == 1)) || [ $# -eq 1 ]; then
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."
-		local onlineUpdated="$(curl -fsSL "https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch/$UPDATE_CHANNEL/updated")"
+		local url=$(get_url "updated")
+		local onlineUpdated=$(curl -fsSL "$url")
+
+		if [[ -z "$onlineUpdated" && -z "$GITHUB_UNAVAILABLE" ]]; then
+			mark_github_unavailable
+			url=$(get_url "updated")
+			ohai "GitHub failed, retrying with Gitea (version check)..."
+			onlineUpdated=$(curl -fsSL "$url")
+		fi
+
 		local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded")
 		if [ "$onlineUpdated" == "$lastDownload" ] && ((forceUpdateCheck == 0)); then
 			msgok "Latest update already downloaded"
@@ -73,39 +139,5 @@ download_if_needed() {
 		fi
 	else
 		msgok "Too soon to download update, skipping..."
-	fi
-}
-
-update_background_check() {
-	download_if_needed
-
-	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
-	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "")
-
-	if [ ! "$lastDownload" == "$updateInstalled" ] && [ ! "$lastDownload" == "" ] && [ ! "$lastDownload" == "error" ]; then
-		echo "Update needed"
-		local lastCalled=$(get_since_last_time "update_needed")
-		if ((lastCalled == -1)) || ((lastCalled > UPDATE_MAIL)); then
-			set_last_time "update_needed"
-			echo "Sending mail to user - tool update needed"
-			{
-				echo "✨ Na Twoim serwerze mikr.us z Nightscoutem można zaktualizować narzędzie nightscout-tool!"
-				echo " "
-				echo "🐕 Watchdog wykrył że dostępna jest nowa aktualizacja nightscout-tool."
-				echo "Na Twoim serwerze zainstalowana jest starsza wersja narzędzia - zaktualizuj go by poprawić stabilność systemu i uzyskać dostęp do nowych funkcji."
-				echo " "
-				echo "Aby zaktualizować narzędzie:"
-				echo " "
-				echo "1. Zaloguj się do panelu administracyjnego mikrusa i zaloguj się do WebSSH:"
-				echo "   https://mikr.us/panel/?a=webssh"
-				echo " "
-				echo "2. Uruchom narzędzie komendą:"
-				echo "   nightscout-tool"
-				echo " "
-				echo "3. Potwierdź naciskając przycisk:"
-				echo "   【 Aktualizacja 】"
-				echo " "
-			} | pusher "✨_Na_Twoim_serwerze_Nightscout_dostępna_jest_aktualizacja"
-		fi
 	fi
 }

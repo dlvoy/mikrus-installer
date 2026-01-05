@@ -47,7 +47,7 @@ SCRIPT_BUILD_TIME="2026.01.05"  #auto-update
 
 GITHUB_BASE_URL="https://raw.githubusercontent.com/dlvoy/mikrus-installer"
 GITEA_BASE_URL="https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch"
-GITHUB_UNAVAILABLE=""  # Empty string = GitHub is available, set to "1" if GitHub fails
+GITHUB_UNAVAILABLE="" # Empty string = GitHub is available, set to "1" if GitHub fails
 
 #dev-begin
 #=======================================

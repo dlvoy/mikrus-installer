@@ -112,3 +112,37 @@ mail_restart_needed() {
 		echo " "
 	} | pusher "🛟_Twoj_serwer_Nightscout_potrzebuje_ręcznego_restartu!"
 }
+
+update_background_check() {
+	download_if_needed
+
+	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
+	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "")
+
+	if [ ! "$lastDownload" == "$updateInstalled" ] && [ ! "$lastDownload" == "" ] && [ ! "$lastDownload" == "error" ]; then
+		echo "Update needed"
+		local lastCalled=$(get_since_last_time "update_needed")
+		if ((lastCalled == -1)) || ((lastCalled > UPDATE_MAIL)); then
+			set_last_time "update_needed"
+			echo "Sending mail to user - tool update needed"
+			{
+				echo "✨ Na Twoim serwerze mikr.us z Nightscoutem można zaktualizować narzędzie nightscout-tool!"
+				echo " "
+				echo "🐕 Watchdog wykrył że dostępna jest nowa aktualizacja nightscout-tool."
+				echo "Na Twoim serwerze zainstalowana jest starsza wersja narzędzia - zaktualizuj go by poprawić stabilność systemu i uzyskać dostęp do nowych funkcji."
+				echo " "
+				echo "Aby zaktualizować narzędzie:"
+				echo " "
+				echo "1. Zaloguj się do panelu administracyjnego mikrusa i zaloguj się do WebSSH:"
+				echo "   https://mikr.us/panel/?a=webssh"
+				echo " "
+				echo "2. Uruchom narzędzie komendą:"
+				echo "   nightscout-tool"
+				echo " "
+				echo "3. Potwierdź naciskając przycisk:"
+				echo "   【 Aktualizacja 】"
+				echo " "
+			} | pusher "✨_Na_Twoim_serwerze_Nightscout_dostępna_jest_aktualizacja"
+		fi
+	fi
+}

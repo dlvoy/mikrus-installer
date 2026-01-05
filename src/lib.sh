@@ -713,6 +713,19 @@ add_if_not_ok_cmd() {
 	fi
 }
 
+add_if_not_ok_compose() {
+	local RESULT=$?
+	if [ "$RESULT" -eq 0 ]; then
+		msgcheck "$1 installed"
+	else
+		ohai "Installing $1..."
+    mkdir -p "~/.docker/cli-plugins" >> "$LOGTO" 2>&1
+    curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o "~/.docker/cli-plugins/docker-compose" >> "$LOGTO" 2>&1
+    chmod +x "~/.docker/cli-plugins/docker-compose" >> "$LOGTO" 2>&1 
+    msgcheck "Installing $1 successfull"
+	fi
+}
+
 check_git() {
 	git --version >/dev/null 2>&1
 	add_if_not_ok "GIT" "git"
@@ -724,8 +737,8 @@ check_docker() {
 }
 
 check_docker_compose() {
-	docker compose -v >/dev/null 2>&1
-	add_if_not_ok "Docker compose" "docker-compose"
+	docker compose version >/dev/null 2>&1
+	add_if_not_ok_compose "Docker compose"
 }
 
 patch_docker_compose() {

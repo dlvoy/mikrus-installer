@@ -2,6 +2,28 @@
 # COMMANDLINE PARSER
 #=======================================
 
+help() {
+	cat <<EOF
+Usage: nightscout-tool [options]
+
+Description:
+	Nightscout-tool is a command-line tool for managing Nightscout.	
+
+	In UI mode, tool provides a menu-driven interface for managing Nightscout server, its configuration, updates, cleanup, and diagnostics.
+	In watchdog mode, it can be used to monitor the status of Nightscout and send an email alert if the service is down.
+
+Options:
+  -w, --watchdog    Run in watchdog mode
+  -v, --version     Show version
+  -l, --loud        Enable debug logging
+  -d, --develop     Switch to DEVELOP update channel
+  -p, --production  Switch to PRODUCTION update channel
+  -u, --update      Force update check
+  -c, --channel     Switch to specified update channel
+  -h, --help        Show this help message
+EOF
+}
+
 parse_commandline_args() {
 
 	load_update_channel
@@ -71,6 +93,10 @@ parse_commandline_args() {
 			update_logto
 			shift
 			;;
+		-h | --help)
+			help
+			exit 0
+			;;	
 		--)
 			shift
 			break

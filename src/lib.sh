@@ -42,6 +42,14 @@ SCRIPT_VERSION="1.9.5"          #auto-update
 SCRIPT_BUILD_TIME="2025.03.19"  #auto-update
 
 #=======================================
+# DOWNLOAD CONFIG
+#=======================================
+
+GITHUB_BASE_URL="https://raw.githubusercontent.com/dlvoy/mikrus-installer"
+GITEA_BASE_URL="https://gitea.dzienia.pl/shared/mikrus-installer/raw/branch"
+GITHUB_UNAVAILABLE=""  # Empty string = GitHub is available, set to "1" if GitHub fails
+
+#=======================================
 # SETUP
 #=======================================
 

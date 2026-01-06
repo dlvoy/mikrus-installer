@@ -73,8 +73,8 @@ check_docker() {
 check_docker_compose() {
 	local version_output
 	version_output="$(docker compose version 2>&1)"
-	# check if output has 'unknown' in it
-	if [[ "$version_output" == *"unknown"* ]]; then
+	# check if output has 'unknown' in it or doesn't match the required version pattern
+	if [[ "$version_output" == *"unknown"* ]] || [[ ! "$version_output" =~ version\ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 		add_if_not_ok_compose "Docker compose" "force"
 	else
 		msgcheck "Docker compose installed"

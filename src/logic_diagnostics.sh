@@ -1,3 +1,14 @@
+# shellcheck disable=SC2148
+# shellcheck disable=SC2155
+
+#dev-begin
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# IMPORTS
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# shellcheck source=./headers.sh
+source ./headers.sh
+#dev-end
+
 #=======================================
 # DIAGNOSTICS
 #=======================================

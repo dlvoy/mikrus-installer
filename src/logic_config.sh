@@ -24,7 +24,7 @@ source_admin() {
 do_uninstall() {
 	msgok "Uninstalling..."
 	uninstall_containers
-	ohai "Usuwanie plików, proszę czekać..." 
+	ohai "Usuwanie plików, proszę czekać..."
 	uninstall_cron
 	rm -r "${MONGO_DB_DIR:?}/data"
 	rm -r "${CONFIG_ROOT_DIR:?}"

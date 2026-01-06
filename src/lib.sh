@@ -39,8 +39,8 @@ DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
-SCRIPT_VERSION="1.10.1"         #auto-update
-SCRIPT_BUILD_TIME="2026.01.05"  #auto-update
+SCRIPT_VERSION="1.10.3"         #auto-update
+SCRIPT_BUILD_TIME="2026.01.06"  #auto-update
 FORCE_DEBUG_LOG=""
 NONINTERACTIVE_MODE="false"
 EXECUTED="true"

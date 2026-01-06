@@ -227,6 +227,10 @@ ohai() {
   fi
 }
 
+msgprint() {
+	printf "%s\n" "$(shell_join "$@")"
+}
+
 msgok() {
 	if [ "$NONINTERACTIVE_MODE" = "true" ]; then
   	# shellcheck disable=SC2059

@@ -8,7 +8,8 @@ Usage: nightscout-tool [options]
 
 Description:
 
-  Nightscout-tool is a command-line tool for managing Nightscout.
+  Nightscout-tool is a command-line tool for managing Nightscout instance
+  and its containers on mikr.us hosting.
 
   In UI mode, tool provides a menu-driven interface for managing 
   Nightscout server, its configuration, updates, cleanup, and diagnostics.
@@ -22,11 +23,12 @@ Options:
   -l, --loud        Enable debug logging (UI) or verbose mode (non-int.)
   -d, --develop     Switch to DEVELOP update channel
   -p, --production  Switch to PRODUCTION update channel
-  -u, --update      Force update check
+  -u, --update      Perform unattended update of tool
   -c, --channel     Switch to specified update channel
   -s, --cleanup     Perform cleanup
   -r, --restart     Restart containers
       --update-ns   Update Nightscout and Mongo containers
+	  --force-check Force update check in UI mode
   -h, --help        Show this help message
 EOF
 }
@@ -35,7 +37,10 @@ parse_commandline_args() {
 
 	load_update_channel
 
-	CMDARGS=$(getopt --quiet -o wvldpuc:srh --long watchdog,version,loud,develop,production,update,channel:,cleanup,restart,update-ns,help -n 'nightscout-tool' -- "$@")
+	CMDARGS=$(getopt --quiet \
+		-o wvldpuc:srh \
+		--long watchdog,version,loud,develop,production,update,force-check,channel:,cleanup,restart,update-ns,help \
+		-n 'nightscout-tool' -- "$@")
 
 	# shellcheck disable=SC2181
 	if [ $? != 0 ]; then
@@ -47,7 +52,11 @@ parse_commandline_args() {
 	eval set -- "$CMDARGS"
 
 	WATCHDOGMODE=false
-  NONINTERACTIVE_MODE=false
+	NONINTERACTIVE_MODE=false
+	local action=""
+	local new_channel=""
+
+	# First pass: gather configuration and determine action
 	while true; do
 		case "$1" in
 		-w | --watchdog)
@@ -56,70 +65,60 @@ parse_commandline_args() {
 			shift
 			;;
 		-v | --version)
-			echo "$SCRIPT_VERSION"
-			exit 0
+			action="version"
+			shift
 			;;
 		-l | --loud)
-			warn "Loud mode, enabling debug logging"
-			FORCE_DEBUG_LOG="1"	
-			update_logto
+			FORCE_DEBUG_LOG="1"
 			shift
 			;;
 		-d | --develop)
-			warn "Switching to DEVELOP update channel"
-			UPDATE_CHANNEL=develop
+			new_channel="develop"
 			forceUpdateCheck=1
-			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
-			update_logto
 			shift
 			;;
 		-p | --production)
-			warn "Switching to PRODUCTION update channel"
-			UPDATE_CHANNEL=master
+			new_channel="master"
 			forceUpdateCheck=1
-			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
-			update_logto
+			shift
+			;;
+		-f | --force-check)
+			forceUpdateCheck=1
 			shift
 			;;
 		-u | --update)
-			warn "Forcing update check"
-			forceUpdateCheck=1
+			action="update"
 			shift
 			;;
 		-c | --channel)
 			shift # The arg is next in position args
-			UPDATE_CHANNEL_CANDIDATE=$1
+			new_channel=$1
 			forceUpdateCheck=1
 
-			[[ ! "$UPDATE_CHANNEL_CANDIDATE" =~ ^[a-z]{3,}$ ]] && {
-				echo "Incorrect channel name provided: $UPDATE_CHANNEL_CANDIDATE"
+			[[ ! "$new_channel" =~ ^[a-z]{3,}$ ]] && {
+				echo "Incorrect channel name provided: $new_channel"
 				exit 1
 			}
-
-			warn "Switching to $UPDATE_CHANNEL_CANDIDATE update channel"
-			UPDATE_CHANNEL="$UPDATE_CHANNEL_CANDIDATE"
-			echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
-			update_logto
 			shift
 			;;
 		-s | --cleanup)
 			NONINTERACTIVE_MODE=true
-			do_cleanup_all
-			exit 0
+			action="cleanup"
+			shift
 			;;
 		-r | --restart)
 			NONINTERACTIVE_MODE=true
-			do_restart
-			exit 0
+			action="restart"
+			shift
 			;;
 		--update-ns)
 			NONINTERACTIVE_MODE=true
-			do_update_ns
-			exit 0
+			action="update-ns"
+			shift
 			;;
 		-h | --help)
-			help
-			exit 0
+			action="help"
+			shift
 			;;
 		--)
 			shift
@@ -129,10 +128,54 @@ parse_commandline_args() {
 		esac
 	done
 
-	if [ "$WATCHDOGMODE" = "true" ]; then
-    startup_version
-    startup_debug
-		watchdog_check
+	# Apply configuration
+	if [ -n "$FORCE_DEBUG_LOG" ]; then
+		warn "Loud mode, enabling debug logging"
+		update_logto
 	fi
 
+	if [ -n "$new_channel" ]; then
+		warn "Switching to $new_channel update channel"
+		UPDATE_CHANNEL="$new_channel"
+		echo "$UPDATE_CHANNEL" >"$UPDATE_CHANNEL_FILE"
+		update_logto
+	fi
+
+	if [ "$forceUpdateCheck" = "1" ]; then
+		warn "Forcing update check"
+	fi
+
+	# Second pass: execute action or continue
+	case "$action" in
+	version)
+		echo "$SCRIPT_VERSION"
+		exit 0
+		;;
+	help)
+		help
+		exit 0
+		;;
+	cleanup)
+		do_cleanup_all
+		exit 0
+		;;
+	restart)
+		do_restart
+		exit 0
+		;;
+	update)
+		do_update_tool
+		exit 0
+		;;
+	update-ns)
+		do_update_ns
+		exit 0
+		;;
+	esac
+
+	if [ "$WATCHDOGMODE" = "true" ]; then
+		startup_version
+		startup_debug
+		watchdog_check
+	fi
 }

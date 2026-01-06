@@ -64,8 +64,15 @@ check_docker() {
 }
 
 check_docker_compose() {
-	docker compose version >/dev/null 2>&1
-	add_if_not_ok_compose "Docker compose"
+	local version_output
+	version_output="$(docker compose version)"
+	# check if output has 'unknown' in it
+	if [[ "$version_output" == *"unknown"* ]]; then
+		$?=-1
+		add_if_not_ok_compose "Docker compose"
+	else
+		msgcheck "Docker compose installed"
+	fi
 }
 
 check_jq() {

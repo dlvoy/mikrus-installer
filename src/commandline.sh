@@ -25,6 +25,8 @@ Options:
   -u, --update      Force update check
   -c, --channel     Switch to specified update channel
   -s, --cleanup     Perform cleanup
+  -r, --restart     Restart containers
+      --update-ns   Update Nightscout and Mongo containers
   -h, --help        Show this help message
 EOF
 }
@@ -33,7 +35,7 @@ parse_commandline_args() {
 
 	load_update_channel
 
-	CMDARGS=$(getopt --quiet -o wvldpuc:sh --long watchdog,version,loud,develop,production,update,channel:,cleanup,help -n 'nightscout-tool' -- "$@")
+	CMDARGS=$(getopt --quiet -o wvldpuc:srh --long watchdog,version,loud,develop,production,update,channel:,cleanup,restart,update-ns,help -n 'nightscout-tool' -- "$@")
 
 	# shellcheck disable=SC2181
 	if [ $? != 0 ]; then
@@ -104,7 +106,17 @@ parse_commandline_args() {
 			NONINTERACTIVE_MODE=true
 			do_cleanup_all
 			exit 0
-			;;	
+			;;
+		-r | --restart)
+			NONINTERACTIVE_MODE=true
+			do_restart
+			exit 0
+			;;
+		--update-ns)
+			NONINTERACTIVE_MODE=true
+			do_update_ns
+			exit 0
+			;;
 		-h | --help)
 			help
 			exit 0

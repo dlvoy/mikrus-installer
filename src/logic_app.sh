@@ -56,3 +56,17 @@ startup_debug() {
 		msgdebug "Debug logging enabled - see: $DEBUG_LOG_FILE"
 	fi
 }
+
+do_restart() {
+	msgnote "Restarting containers..."
+	uninstall_containers
+	install_containers
+	msgok "Restarted"
+}
+
+do_update_ns() {
+	msgnote "Updating Nightscout and Mongo containers (downloading latest images)..."
+	uninstall_containers
+	update_containers
+	msgok "Updated"
+}

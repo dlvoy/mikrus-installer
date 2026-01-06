@@ -95,6 +95,5 @@ do_cleanup_all() {
 	do_cleanup_sys
 	do_cleanup_docker
 	do_cleanup_db
-	do_cleanup_diagnostics
 	cleanup_stats
 }

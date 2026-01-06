@@ -71,7 +71,7 @@ cleanup_stats() {
 	local remainingTxt=$(echo "$spaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
 	local totalTxt=$(echo "$spaceInfo" | awk '{print $2}' | numfmt --to iec-i --suffix=B)
 	local percTxt=$(echo "$spaceInfo" | awk '{print $4}')
-	local fixedPerc=${percTxt/[%]/=}
+	local fixedPerc=$percTxt
 
 	local nowB=$(echo "$spaceInfo" | awk '{print $3}')
 	local lastTimeB=$(echo "$lastTimeSpaceInfo" | awk '{print $3}')
@@ -82,21 +82,15 @@ cleanup_stats() {
 		savedTxt="---"
 	fi
 
-	local statusTitle="\n$(center_multiline 45 "$(
-		pad_multiline \
-			"  Dostępne: ${remainingTxt}" \
-			"\n Zwolniono: ${savedTxt}" \
-			"\n    Zajęte: ${fixedPerc} (z ${totalTxt})"
-	)")\n"
-
-	hline
-	echo "${statusTitle/=/%}"
-	hline
+  hline
+  printf "  Dostępne: %s\n Zwolniono: %s\n    Zajęte: %s (z %s)\n" "${remainingTxt}" "${savedTxt}" "${fixedPerc}" "${totalTxt}"
+  hline
 }
 
 do_cleanup_all() {
-	echo "Cleanup"
-	hline
+	echo "Sprzątanie..."
+  lastTimeSpaceInfo=$(get_space_info)
+  hline
 	do_cleanup_container_logs
 	do_cleanup_sys
 	do_cleanup_docker

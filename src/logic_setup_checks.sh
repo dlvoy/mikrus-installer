@@ -38,7 +38,7 @@ add_if_not_ok_compose() {
 	#shellcheck disable=SC2319
 	local RESULT=$?
 	if [ "$#" -eq 2 ]; then
-		RESULT=$2
+		RESULT=-1
 	fi
 
 	if [ "$RESULT" -eq 0 ]; then

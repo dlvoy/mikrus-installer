@@ -128,10 +128,16 @@ event_list() {
 					fi
 				else
 					if [[ "$eventTail" == "set" ]] || [[ "$eventTail" == "clear" ]]; then
+						local startVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_set")
+						local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_clear")
+
+						# Filter out orphaned clear events (clear exists but set does not)
+						if [[ "$startVar" == "null" ]] && [[ "$endVar" != "null" ]]; then
+							continue
+						fi
+
 						if [[ ! " ${namesTab[*]} " =~ [[:space:]]${eventName}[[:space:]] ]]; then
 							namesTab+=("${eventName}")
-							local startVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_set")
-							local endVar=$(echo "$eventsJSON" | jq -r ".values.${eventName}_clear")
 							local joinedVar="od: $startVar zdjęto: $endVar"
 							local fixedVar=$(echo "$joinedVar" | sed -E -e "s/ ?(od|zdjęto): null ?//g")
 							if [[ "$fixedVar" =~ od: ]] && [[ "$fixedVar" =~ zdjęto: ]]; then

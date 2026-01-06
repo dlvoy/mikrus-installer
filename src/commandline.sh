@@ -39,8 +39,8 @@ Options:
   -s, --cleanup     Perform cleanup
   -r, --restart     Restart containers
       --update-ns   Update Nightscout and Mongo containers
-	  --force-check Force update check in UI mode
-	  --uninstall   Uninstall Nightscout, containers, data, config and tool
+	    --force-check Force update check in UI mode
+	    --uninstall   Uninstall Nightscout, containers, data, config and tool
   -h, --help        Show this help message
 EOF
 }

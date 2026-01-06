@@ -77,13 +77,48 @@ event_count() {
 	else
 		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")
 		local eventsKeysStr=$(echo "${eventsJSON}" | jq -r ".values | keys[]")
-		local eventsCount=${#eventsKeysStr}
-		if ((eventsCount > 0)); then
-			mapfile -t eventList < <(echo "${eventsKeysStr}")
-			echo "${#eventList[@]}"
-		else
+
+		if [[ -z "$eventsKeysStr" ]]; then
 			echo "0"
+			return
 		fi
+
+		mapfile -t eventList < <(echo "${eventsKeysStr}")
+		local count=0
+		local processedNames=()
+
+		for eventId in "${eventList[@]}"; do
+			# Parse eventName and eventTail (suffix)
+			mapfile -t -d '_' eventIdSplit <<<"${eventId}"
+			local eventTail=$(echo "${eventIdSplit[-1]}" | tr -d '\n')
+			unset "eventIdSplit[-1]"
+			printf -v eventBase '%s_' "${eventIdSplit[@]}"
+			local eventName="${eventBase%_}"
+			if [ ${#eventIdSplit[@]} -eq 0 ]; then
+				eventName="$eventTail"
+				eventTail=""
+			fi
+
+			if [[ "$eventTail" == "start" ]] || [[ "$eventTail" == "end" ]]; then
+				# Group start/end as one
+				if [[ ! " ${processedNames[*]} " =~ [[:space:]]${eventName}[[:space:]] ]]; then
+					processedNames+=("${eventName}")
+					((count++))
+				fi
+			elif [[ "$eventTail" == "set" ]]; then
+				((count++))
+			elif [[ "$eventTail" == "clear" ]]; then
+				# Count clear only if set exists
+				local hasSet=$(echo "$eventsJSON" | jq -r ".values.${eventName}_set")
+				if [[ "$hasSet" != "null" ]]; then
+					((count++))
+				fi
+			else
+				# Lone event (no suffix)
+				((count++))
+			fi
+		done
+		echo "$count"
 	fi
 }
 

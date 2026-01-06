@@ -35,14 +35,21 @@ add_if_not_ok_cmd() {
 }
 
 add_if_not_ok_compose() {
+	#shellcheck disable=SC2319
 	local RESULT=$?
+	if [ "$#" -eq 2 ]; then
+		RESULT=$2
+	fi
+
 	if [ "$RESULT" -eq 0 ]; then
 		msgcheck "$1 installed"
 	else
 		ohai "Installing $1..."
-		mkdir -p "~/.docker/cli-plugins" >>"$LOGTO" 2>&1
-		curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o "~/.docker/cli-plugins/docker-compose" >>"$LOGTO" 2>&1
-		chmod +x "~/.docker/cli-plugins/docker-compose" >>"$LOGTO" 2>&1
+		{
+			mkdir -p "$HOME/.docker/cli-plugins"
+			curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o "$HOME/.docker/cli-plugins/docker-compose"
+		} >>"$LOGTO" 2>&1
+		chmod +x "$HOME/.docker/cli-plugins/docker-compose" >>"$LOGTO" 2>&1
 		msgcheck "Installing $1 successfull"
 	fi
 }
@@ -65,11 +72,10 @@ check_docker() {
 
 check_docker_compose() {
 	local version_output
-	version_output="$(docker compose version)"
+	version_output="$(docker compose version 2>&1)"
 	# check if output has 'unknown' in it
 	if [[ "$version_output" == *"unknown"* ]]; then
-		$?=-1
-		add_if_not_ok_compose "Docker compose"
+		add_if_not_ok_compose "Docker compose" "force"
 	else
 		msgcheck "Docker compose installed"
 	fi

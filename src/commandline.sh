@@ -19,7 +19,7 @@ Description:
 Options:
   -w, --watchdog    Run in watchdog mode
   -v, --version     Show version
-  -l, --loud        Enable debug logging
+  -l, --loud        Enable debug logging (UI) or verbose mode (non-int.)
   -d, --develop     Switch to DEVELOP update channel
   -p, --production  Switch to PRODUCTION update channel
   -u, --update      Force update check

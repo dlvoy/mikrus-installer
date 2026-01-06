@@ -1,3 +1,6 @@
+# shellcheck disable=SC2148
+# shellcheck disable=SC2155
+
 #=======================================
 # UPGRADE
 #=======================================
@@ -117,7 +120,8 @@ download_if_needed() {
 	local lastCheck=$(read_or_default "$UPDATES_DIR/timestamp")
 	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
 	local timestampNow=$(date +%s)
-	local updateCheck=$UPDATE_CHECK
+	local updateCheck=$UPDATE_CHECK]
+	#shellcheck disable=SC2154
 	if (((timestampNow - lastCheck) > updateCheck)) || [ "$lastDownload" == "" ] || [ "$lastDownload" == "error" ] || ((forceUpdateCheck == 1)) || [ $# -eq 1 ]; then
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."
@@ -156,7 +160,7 @@ download_update_forced() {
 		ohai "GitHub failed, retrying with Gitea (version check)..."
 		onlineUpdated=$(curl -fsSL "$url" 2>>"$LOGTO")
 	fi
-	
+
 	if [ "$onlineUpdated" == "$lastDownload" ]; then
 		msgdebug "Downloaded update will be the same as last downloaded"
 	fi
@@ -165,7 +169,7 @@ download_update_forced() {
 	download_updates
 }
 
-
+#shellcheck disable=SC2154
 do_update_tool() {
 	download_update_forced
 
@@ -173,113 +177,113 @@ do_update_tool() {
 	local updateInstalled=$(read_or_default "$UPDATES_DIR/updated" "???")
 
 	if [ "$lastDownload" == "error" ]; then
-		msgerr "Aktualizacja niemożliwa" 
+		msgerr "Aktualizacja niemożliwa"
 		msgerr "Nie można w tej chwili aktualizować narzędzia.${TL}Spróbuj ponownie później.${NL}Jeśli problem nie ustąpi - sprawdź konfigurację kanału aktualizacji"
 	else
 
 		if [ "$UPDATE_CHANNEL" == "master" ] && [[ "$lastDownload" < "$updateInstalled" ]]; then
-			 warn "Downgrade na produkcyjnym kanale aktualizacji!"
-    fi
+			warn "Downgrade na produkcyjnym kanale aktualizacji!"
+		fi
 
-			local changed=0
-			local redeploy=0
+		local changed=0
+		local redeploy=0
 
-			local instOnlineVer=$(extract_version "$(<"$UPDATES_DIR/install.sh")")
-			local depEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/deployment.env")")
-			local nsEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/nightscout.env")")
-			local compOnlineVer=$(extract_version "$(<"$UPDATES_DIR/docker-compose.yml")")
+		local instOnlineVer=$(extract_version "$(<"$UPDATES_DIR/install.sh")")
+		local depEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/deployment.env")")
+		local nsEnvOnlineVer=$(extract_version "$(<"$UPDATES_DIR/nightscout.env")")
+		local compOnlineVer=$(extract_version "$(<"$UPDATES_DIR/docker-compose.yml")")
 
-			local instLocalVer=$(extract_version "$(<"$TOOL_FILE")")
-			local depEnvLocalVer=$(extract_version "$(<"$ENV_FILE_DEP")")
-			local nsEnvLocalVer=$(extract_version "$(<"$ENV_FILE_NS")")
-			local compLocalVer=$(extract_version "$(<"$DOCKER_COMPOSE_FILE")")
+		local instLocalVer=$(extract_version "$(<"$TOOL_FILE")")
+		local depEnvLocalVer=$(extract_version "$(<"$ENV_FILE_DEP")")
+		local nsEnvLocalVer=$(extract_version "$(<"$ENV_FILE_NS")")
+		local compLocalVer=$(extract_version "$(<"$DOCKER_COMPOSE_FILE")")
 
-			local msgInst="$(printf "\U1F7E2") $instLocalVer"
-			local msgDep="$(printf "\U1F7E2") $depEnvLocalVer"
-			local msgNs="$(printf "\U1F7E2") $nsEnvLocalVer"
-			local msgComp="$(printf "\U1F7E2") $compLocalVer"
+		local msgInst="$(printf "\U1F7E2") $instLocalVer"
+		local msgDep="$(printf "\U1F7E2") $depEnvLocalVer"
+		local msgNs="$(printf "\U1F7E2") $nsEnvLocalVer"
+		local msgComp="$(printf "\U1F7E2") $compLocalVer"
 
-			if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
-				changed=$((changed + 1))
-				msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
-			fi
+		if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
+			changed=$((changed + 1))
+			msgInst="$(printf "\U1F534") $instLocalVer $(printf "\U27A1") $instOnlineVer"
+		fi
 
-			if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
-				changed=$((changed + 1))
-				redeploy=$((redeploy + 1))
-				msgDep="$(printf "\U1F534") $depEnvLocalVer $(printf "\U27A1") $depEnvOnlineVer"
-			fi
+		if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+			changed=$((changed + 1))
+			redeploy=$((redeploy + 1))
+			msgDep="$(printf "\U1F534") $depEnvLocalVer $(printf "\U27A1") $depEnvOnlineVer"
+		fi
 
-			if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
-				changed=$((changed + 1))
-				redeploy=$((redeploy + 1))
-				msgNs="$(printf "\U1F534") $nsEnvLocalVer $(printf "\U27A1") $nsEnvOnlineVer"
-			fi
+		if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+			changed=$((changed + 1))
+			redeploy=$((redeploy + 1))
+			msgNs="$(printf "\U1F534") $nsEnvLocalVer $(printf "\U27A1") $nsEnvOnlineVer"
+		fi
 
-			if ! [ "$compLocalVer" == "$compOnlineVer" ]; then
-				changed=$((changed + 1))
-				redeploy=$((redeploy + 1))
-				msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
-			fi
+		if ! [ "$compLocalVer" == "$compOnlineVer" ]; then
+			changed=$((changed + 1))
+			redeploy=$((redeploy + 1))
+			msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
+		fi
 
-				local okTxt=""
-				if [ "$redeploy" -gt 0 ]; then
-					okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
-				fi
+		local okTxt=""
+		if [ "$redeploy" -gt 0 ]; then
+			okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
+		fi
 
-				local versionMsg="${TL}Build: ${updateInstalled}"
-				if [ ! "$lastDownload" == "$updateInstalled" ]; then
-					versionMsg="$(pad_multiline "${TL}Masz build: ${updateInstalled}${NL}  Dostępny: ${lastDownload}")"
-				fi
-  
-        hline 
-				echo -e "Aktualizacja plików:" "${versionMsg}" \
-					"$(
-						pad_multiline \
-							"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
-							"${NL}${uni_bullet}Konfiguracja deploymentu: $msgDep" \
-							"${NL}${uni_bullet}Konfiguracja Nightscout:  $msgNs" \
-							"${NL}${uni_bullet}Kompozycja usług:         $msgComp${NL}"
-					)" \
-					"$okTxt"
-        hline
+		local versionMsg="${TL}Build: ${updateInstalled}"
+		if [ ! "$lastDownload" == "$updateInstalled" ]; then
+			versionMsg="$(pad_multiline "${TL}Masz build: ${updateInstalled}${NL}  Dostępny: ${lastDownload}")"
+		fi
 
-				clear_last_time "update_needed"
+		hline
+		echo -e "Aktualizacja plików:" "${versionMsg}" \
+			"$(
+				pad_multiline \
+					"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
+					"${NL}${uni_bullet}Konfiguracja deploymentu: $msgDep" \
+					"${NL}${uni_bullet}Konfiguracja Nightscout:  $msgNs" \
+					"${NL}${uni_bullet}Kompozycja usług:         $msgComp${NL}"
+			)" \
+			"$okTxt"
+		hline
 
-				if [ "$redeploy" -gt 0 ]; then
-          ohai "Redeploy - uninstalling containers"
-					uninstall_containers
-				fi
+		clear_last_time "update_needed"
 
-				if ! [ "$compOnlineVer" == "$compLocalVer" ]; then
-					ohai "Updating $DOCKER_COMPOSE_FILE"
-					cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
-				fi
+		if [ "$redeploy" -gt 0 ]; then
+			ohai "Redeploy - uninstalling containers"
+			uninstall_containers
+		fi
 
-				if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
-					ohai "Updating $ENV_FILE_DEP"
-					dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
-				fi
+		if ! [ "$compOnlineVer" == "$compLocalVer" ]; then
+			ohai "Updating $DOCKER_COMPOSE_FILE"
+			cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
+		fi
 
-				if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
-					ohai "Updating $ENV_FILE_NS"
-					dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
-				fi
+		if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+			ohai "Updating $ENV_FILE_DEP"
+			dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
+		fi
 
-				echo "$lastDownload" >"$UPDATES_DIR/updated"
+		if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+			ohai "Updating $ENV_FILE_NS"
+			dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
+		fi
 
-				if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
-					ohai "Updating $TOOL_FILE"
-					cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
-				fi
+		echo "$lastDownload" >"$UPDATES_DIR/updated"
 
-				if [ "$redeploy" -gt 0 ]; then
-          ohai "Redeploy - installing containers"
-          install_containers
-				fi
+		if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
+			ohai "Updating $TOOL_FILE"
+			cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
+		fi
 
-        hline
-				msgok "Aktualizacja zakończona"
-#		fi
+		if [ "$redeploy" -gt 0 ]; then
+			ohai "Redeploy - installing containers"
+			install_containers
+		fi
+
+		hline
+		msgok "Aktualizacja zakończona"
+		#		fi
 	fi
 }

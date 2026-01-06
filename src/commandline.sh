@@ -40,6 +40,7 @@ Options:
   -r, --restart     Restart containers
       --update-ns   Update Nightscout and Mongo containers
 	  --force-check Force update check in UI mode
+	  --uninstall   Uninstall Nightscout, containers, data, config and tool
   -h, --help        Show this help message
 EOF
 }
@@ -50,7 +51,7 @@ parse_commandline_args() {
 
 	CMDARGS=$(getopt --quiet \
 		-o wvldpuc:srh \
-		--long watchdog,version,loud,develop,production,update,force-check,channel:,cleanup,restart,update-ns,help \
+		--long watchdog,version,loud,develop,production,update,force-check,channel:,cleanup,restart,update-ns,uninstall,help \
 		-n 'nightscout-tool' -- "$@")
 
 	# shellcheck disable=SC2181
@@ -129,6 +130,12 @@ parse_commandline_args() {
 			action="update-ns"
 			shift
 			;;
+		--uninstall)
+			#shellcheck disable=SC2034
+			NONINTERACTIVE_MODE=true
+			action="uninstall"
+			shift
+			;;
 		-h | --help)
 			action="help"
 			shift
@@ -182,6 +189,10 @@ parse_commandline_args() {
 		;;
 	update-ns)
 		do_update_ns
+		exit 0
+		;;
+	uninstall)
+		do_uninstall
 		exit 0
 		;;
 	esac

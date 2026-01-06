@@ -176,7 +176,7 @@ setup_firewall() {
 	# Extract the last 3 digits from the hostname
 	port_number=$(echo "$host" | grep -oE '[0-9]{3}$')
 
-  ohai "Firewall port: $port_number"
+	ohai "Firewall port: $port_number"
 
 	port1=$((10000 + port_number))
 	port2=$((20000 + port_number))

@@ -135,6 +135,7 @@ main_menu() {
 
 install_or_menu() {
 	STATUS_NS=$(get_docker_status "ns-server")
+	#shellcheck disable=SC2034
 	lastTimeSpaceInfo=$(get_space_info)
 
 	if [ "$STATUS_NS" = "missing" ]; then

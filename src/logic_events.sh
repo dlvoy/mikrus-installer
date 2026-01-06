@@ -83,7 +83,7 @@ event_label() {
 }
 
 event_count() {
-	if [ ! -f ${EVENTS_DB} ]; then
+	if [ ! -f "${EVENTS_DB}" ]; then
 		echo "0"
 	else
 		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")
@@ -134,7 +134,7 @@ event_count() {
 }
 
 event_list() {
-	if [ ! -f ${EVENTS_DB} ]; then
+	if [ ! -f "${EVENTS_DB}" ]; then
 		echo "Nie odnotowano zdarzeń"
 	else
 		local eventsJSON=$(dotenv-tool parse -r -f "${EVENTS_DB}")

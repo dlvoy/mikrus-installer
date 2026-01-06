@@ -124,6 +124,7 @@ parse_commandline_args() {
 			shift
 			;;
 		--update-ns)
+			#shellcheck disable=SC2034
 			NONINTERACTIVE_MODE=true
 			action="update-ns"
 			shift

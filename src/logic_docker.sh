@@ -23,21 +23,21 @@ get_docker_status() {
 }
 
 install_containers() {
-	if [[ "$FORCE_DEBUG_LOG" == "1"  && "$NONINTERACTIVE_MODE" = "true" ]]; then
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE up --no-recreate -d
+	if [[ "$FORCE_DEBUG_LOG" == "1" && "$NONINTERACTIVE_MODE" = "true" ]]; then
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" up --no-recreate -d
 	else
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE up --no-recreate -d >>"$LOGTO" 2>&1
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" up --no-recreate -d >>"$LOGTO" 2>&1
 	fi
 }
 
 update_containers() {
-	if [[ "$FORCE_DEBUG_LOG" == "1"  && "$NONINTERACTIVE_MODE" = "true" ]]; then
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE pull
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE up -d
+	if [[ "$FORCE_DEBUG_LOG" == "1" && "$NONINTERACTIVE_MODE" = "true" ]]; then
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" pull
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" up -d
 	else
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE pull >>"$LOGTO" 2>&1
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE up -d >>"$LOGTO" 2>&1
-fi
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" pull >>"$LOGTO" 2>&1
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" up -d >>"$LOGTO" 2>&1
+	fi
 }
 
 install_containers_progress() {
@@ -48,10 +48,10 @@ install_containers_progress() {
 }
 
 uninstall_containers() {
-	if [[ "$FORCE_DEBUG_LOG" == "1"  && "$NONINTERACTIVE_MODE" = "true" ]]; then
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE down
+	if [[ "$FORCE_DEBUG_LOG" == "1" && "$NONINTERACTIVE_MODE" = "true" ]]; then
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" down
 	else
-		docker compose --env-file $ENV_FILE_DEP -f $DOCKER_COMPOSE_FILE down >>"$LOGTO" 2>&1
+		docker compose --env-file "$ENV_FILE_DEP" -f "$DOCKER_COMPOSE_FILE" down >>"$LOGTO" 2>&1
 	fi
 }
 

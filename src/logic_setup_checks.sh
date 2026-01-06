@@ -40,10 +40,10 @@ add_if_not_ok_compose() {
 		msgcheck "$1 installed"
 	else
 		ohai "Installing $1..."
-    mkdir -p "~/.docker/cli-plugins" >> "$LOGTO" 2>&1
-    curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o "~/.docker/cli-plugins/docker-compose" >> "$LOGTO" 2>&1
-    chmod +x "~/.docker/cli-plugins/docker-compose" >> "$LOGTO" 2>&1 
-    msgcheck "Installing $1 successfull"
+		mkdir -p "~/.docker/cli-plugins" >>"$LOGTO" 2>&1
+		curl -SL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o "~/.docker/cli-plugins/docker-compose" >>"$LOGTO" 2>&1
+		chmod +x "~/.docker/cli-plugins/docker-compose" >>"$LOGTO" 2>&1
+		msgcheck "Installing $1 successfull"
 	fi
 }
 

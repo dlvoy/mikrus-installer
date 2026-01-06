@@ -29,6 +29,8 @@ patch_docker_compose() {
 		if grep -q "bitnami/mongodb" "$DOCKER_COMPOSE_FILE"; then
 			ohai "Patching docker-compose.yml MongoDB image..."
 			# Replace bitnami/mongodb with official mongo image
+			# This is BY PURPOSE left as var in yaml - as it is replaced wit env vars
+			# shellcheck disable=SC2016
 			sed -i -E 's|image:\s*"*(bitnami/)?mongodb:.*"|image: "mongo:${NS_MONGODB_TAG}"|g' "$DOCKER_COMPOSE_FILE"
 			patched=1
 		fi
@@ -44,10 +46,10 @@ patch_docker_compose() {
 			msgcheck "Docker compose file patched"
 			# Restart containers only if they were already running
 			if [ "$containers_running" -eq 1 ]; then
-        do_cleanup_sys
+				do_cleanup_sys
 				ohai "Restarting containers to apply patched configuration..."
 				update_containers
-        do_cleanup_docker
+				do_cleanup_docker
 				msgcheck "Containers restarted"
 			fi
 		fi

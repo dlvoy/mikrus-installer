@@ -17,6 +17,7 @@ update_logto() {
 	if [[ "$UPDATE_CHANNEL" == "develop" || "$FORCE_DEBUG_LOG" == "1" ]]; then
 		LOGTO="$DEBUG_LOG_FILE"
 	else
+		#shellcheck disable=SC2034
 		LOGTO=/dev/null
 	fi
 }
@@ -59,7 +60,7 @@ startup_version() {
 	msgnote "Licensed under CC BY-NC-ND 4.0"
 	if [[ -f $UPDATE_CHANNEL_FILE ]]; then
 		msgok "Loaded update channel: $UPDATE_CHANNEL"
-  fi
+	fi
 }
 
 startup_debug() {

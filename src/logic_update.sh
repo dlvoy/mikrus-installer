@@ -128,8 +128,7 @@ download_if_needed() {
 	local lastCheck=$(read_or_default "$UPDATES_DIR/timestamp")
 	local lastDownload=$(read_or_default "$UPDATES_DIR/downloaded" "")
 	local timestampNow=$(date +%s)
-	local updateCheck=$UPDATE_CHECK]
-	#shellcheck disable=SC2154
+	local updateCheck=$UPDATE_CHECK
 	if (((timestampNow - lastCheck) > updateCheck)) || [ "$lastDownload" == "" ] || [ "$lastDownload" == "error" ] || ((forceUpdateCheck == 1)) || [ $# -eq 1 ]; then
 		echo "$timestampNow" >"$UPDATES_DIR/timestamp"
 		ohai "Checking if new version is available..."

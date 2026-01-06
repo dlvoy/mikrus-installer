@@ -93,15 +93,15 @@ cleanup_stats() {
 		savedTxt="---"
 	fi
 
-  hline
-  printf "  Dostępne: %s\n Zwolniono: %s\n    Zajęte: %s (z %s)\n" "${remainingTxt}" "${savedTxt}" "${fixedPerc}" "${totalTxt}"
-  hline
+	hline
+	printf "  Dostępne: %s\n Zwolniono: %s\n    Zajęte: %s (z %s)\n" "${remainingTxt}" "${savedTxt}" "${fixedPerc}" "${totalTxt}"
+	hline
 }
 
 do_cleanup_all() {
 	echo "Sprzątanie..."
-  lastTimeSpaceInfo=$(get_space_info)
-  hline
+	lastTimeSpaceInfo=$(get_space_info)
+	hline
 	do_cleanup_container_logs
 	do_cleanup_sys
 	do_cleanup_docker

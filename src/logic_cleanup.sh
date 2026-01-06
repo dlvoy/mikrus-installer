@@ -65,3 +65,42 @@ do_cleanup_app_logs() {
 	rm -f "$WATCHDOG_FAILURES_FILE"
 	rm -f "$WATCHDOG_CRON_LOG"
 }
+
+cleanup_stats() {
+	local spaceInfo=$(get_space_info)
+	local remainingTxt=$(echo "$spaceInfo" | awk '{print $3}' | numfmt --to iec-i --suffix=B)
+	local totalTxt=$(echo "$spaceInfo" | awk '{print $2}' | numfmt --to iec-i --suffix=B)
+	local percTxt=$(echo "$spaceInfo" | awk '{print $4}')
+	local fixedPerc=${percTxt/[%]/=}
+
+	local nowB=$(echo "$spaceInfo" | awk '{print $3}')
+	local lastTimeB=$(echo "$lastTimeSpaceInfo" | awk '{print $3}')
+	local savedB=$((nowB - lastTimeB))
+	local savedTxt=$(echo "$savedB" | numfmt --to iec-i --suffix=B)
+
+	if ((savedB < 1)); then
+		savedTxt="---"
+	fi
+
+	local statusTitle="\n$(center_multiline 45 "$(
+		pad_multiline \
+			"  Dostępne: ${remainingTxt}" \
+			"\n Zwolniono: ${savedTxt}" \
+			"\n    Zajęte: ${fixedPerc} (z ${totalTxt})"
+	)")\n"
+
+	echo "\n---------------------------\n"
+	echo "$statusTitle"
+	echo "\n---------------------------\n"
+}
+
+do_cleanup_all() {
+	echo "Cleanup"
+	echo "\n---------------------------\n"
+	do_cleanup_container_logs
+	do_cleanup_sys
+	do_cleanup_docker
+	do_cleanup_db
+	do_cleanup_diagnostics
+	cleanup_stats
+}

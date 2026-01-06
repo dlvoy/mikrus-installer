@@ -24,6 +24,7 @@ Options:
   -p, --production  Switch to PRODUCTION update channel
   -u, --update      Force update check
   -c, --channel     Switch to specified update channel
+  -s, --cleanup     Perform cleanup
   -h, --help        Show this help message
 EOF
 }
@@ -32,7 +33,7 @@ parse_commandline_args() {
 
 	load_update_channel
 
-	CMDARGS=$(getopt --quiet -o wvldpuc:h --long watchdog,version,loud,develop,production,update,channel:,help -n 'nightscout-tool' -- "$@")
+	CMDARGS=$(getopt --quiet -o wvldpuc:sh --long watchdog,version,loud,develop,production,update,channel:,cleanup,help -n 'nightscout-tool' -- "$@")
 
 	# shellcheck disable=SC2181
 	if [ $? != 0 ]; then
@@ -49,7 +50,7 @@ parse_commandline_args() {
 		case "$1" in
 		-w | --watchdog)
 			WATCHDOGMODE=true
-      NONINTERACTIVE_MODE=true
+			NONINTERACTIVE_MODE=true
 			shift
 			;;
 		-v | --version)
@@ -99,10 +100,15 @@ parse_commandline_args() {
 			update_logto
 			shift
 			;;
+		-s | --cleanup)
+			NONINTERACTIVE_MODE=true
+			do_cleanup_all
+			exit 0
+			;;	
 		-h | --help)
 			help
 			exit 0
-			;;	
+			;;
 		--)
 			shift
 			break

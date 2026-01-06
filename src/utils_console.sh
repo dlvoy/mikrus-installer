@@ -76,6 +76,14 @@ msgdebug() {
   fi
 }
 
+hline() {
+	if [ "$NONINTERACTIVE_MODE" = "true" ]; then
+		printf "-------------------------------------------------------\n"
+	else
+		printf "${tty_bold}-------------------------------------------------------${tty_reset}\n"
+	fi
+}
+
 warn() {
 	if [ "$NONINTERACTIVE_MODE" = "true" ]; then
   	# shellcheck disable=SC2059

@@ -89,14 +89,14 @@ cleanup_stats() {
 			"\n    Zajęte: ${fixedPerc} (z ${totalTxt})"
 	)")\n"
 
-	echo "\n---------------------------\n"
-	echo "$statusTitle"
-	echo "\n---------------------------\n"
+	hline
+	echo "${statusTitle/=/%}"
+	hline
 }
 
 do_cleanup_all() {
 	echo "Cleanup"
-	echo "\n---------------------------\n"
+	hline
 	do_cleanup_container_logs
 	do_cleanup_sys
 	do_cleanup_docker

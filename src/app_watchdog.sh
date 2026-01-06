@@ -19,7 +19,7 @@ show_watchdog_logs() {
 	{
 		echo "Ostatnie uruchomienie watchdoga:"
 		get_watchdog_age_string
-		echo "-------------------------------------------------------"
+		hline
 
 		if [[ -f $WATCHDOG_LOG_FILE ]]; then
 			echo "Statusy ostatnich przebiegów watchdoga:"
@@ -27,7 +27,7 @@ show_watchdog_logs() {
 		else
 			echo "Brak logów z ostatnich przebiegów watchdoga"
 		fi
-		echo "-------------------------------------------------------"
+		hline
 
 		if [[ -f $WATCHDOG_CRON_LOG ]]; then
 			echo "Log ostatniego przebiegu watchdoga:"

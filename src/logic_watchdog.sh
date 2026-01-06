@@ -239,7 +239,7 @@ watchdog_check() {
 
 			if [ "$WATCHDOG_STATUS" = "detection_failed" ]; then
 				{
-					echo "----------------------------------------------------------------"
+					hline
 					echo "[$WATCHDOG_TIME] Unknown server failure:"
 					echo "CONTAINERS:"
 					docker stats --no-stream

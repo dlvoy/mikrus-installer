@@ -87,6 +87,7 @@ parse_commandline_args() {
 			shift
 			;;
 		-u | --update)
+			NONINTERACTIVE_MODE=true
 			action="update"
 			shift
 			;;

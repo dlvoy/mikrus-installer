@@ -12,6 +12,16 @@ shell_join() {
 	done
 }
 
+all_join() {
+	local arg
+	printf "$1"
+	shift
+	for arg in "$@"; do
+		printf " "
+		printf "${arg}"
+	done
+}
+
 chomp() {
 	printf "%s" "${1/"$'\n'"/}"
 }
@@ -23,6 +33,10 @@ ohai() {
   else
 	  printf "${tty_blue}==>${tty_bold} %s${tty_reset}\n" "$(shell_join "$@")"
   fi
+}
+
+msgprint() {
+  printf $(all_join "$@")
 }
 
 msgok() {

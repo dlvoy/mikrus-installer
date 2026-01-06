@@ -157,7 +157,7 @@ download_update_forced() {
 		onlineUpdated=$(curl -fsSL "$url" 2>>"$LOGTO")
 	fi
 	
-	if [ "$onlineUpdated" == "$lastDownload" ]  then
+	if [ "$onlineUpdated" == "$lastDownload" ]; then
 		msgdebug "Downloaded update will be the same as last downloaded"
 	fi
 
@@ -178,8 +178,8 @@ do_update_tool() {
 	else
 
 		if [ "$UPDATE_CHANNEL" == "master" ] && [[ "$lastDownload" < "$updateInstalled" ]]; then
-			msgerr "Downgrade niemożliwy na produkcyjnym kanale aktualizacji"
-		else
+			 warn "Downgrade na produkcyjnym kanale aktualizacji!"
+    fi
 
 			local changed=0
 			local redeploy=0
@@ -222,11 +222,6 @@ do_update_tool() {
 				msgComp="$(printf "\U1F534") $compLocalVer $(printf "\U27A1") $compOnlineVer"
 			fi
 
-			if [ "$changed" -eq 0 ]; then
-				if [ $# -eq 1 ]; then
-					msgok "Aktualizacja skryptów nie jest potrzebna"
-				fi
-			else
 				local okTxt=""
 				if [ "$redeploy" -gt 0 ]; then
 					okTxt="${TL}${uni_warn} Aktualizacja zrestartuje i zaktualizuje kontenery ${uni_warn}"
@@ -236,8 +231,9 @@ do_update_tool() {
 				if [ ! "$lastDownload" == "$updateInstalled" ]; then
 					versionMsg="$(pad_multiline "${TL}Masz build: ${updateInstalled}${NL}  Dostępny: ${lastDownload}")"
 				fi
-
-				okhaimsgprint "Aktualizacja plików: ${versionMsg}" \
+  
+        hline 
+				echo -e "Aktualizacja plików:" "${versionMsg}" \
 					"$(
 						pad_multiline \
 							"${TL}${uni_bullet}Skrypt instalacyjny:      $msgInst" \
@@ -246,39 +242,44 @@ do_update_tool() {
 							"${NL}${uni_bullet}Kompozycja usług:         $msgComp${NL}"
 					)" \
 					"$okTxt"
+        hline
 
-				if ! [ $? -eq 1 ]; then
+				clear_last_time "update_needed"
 
-					clear_last_time "update_needed"
-
-					if [ "$redeploy" -gt 0 ]; then
-						docker_compose_down
-					fi
-
-					if ! [ "$compOnlineVer" == "$compLocalVer" ]; then
-						ohai "Updating $DOCKER_COMPOSE_FILE"
-						cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
-					fi
-
-					if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
-						ohai "Updating $ENV_FILE_DEP"
-						dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
-					fi
-
-					if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
-						ohai "Updating $ENV_FILE_NS"
-						dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
-					fi
-
-					echo "$lastDownload" >"$UPDATES_DIR/updated"
-
-					if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
-						ohai "Updating $TOOL_FILE"
-						cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
-						msgok "Aktualizacja zakończona"
-					fi
+				if [ "$redeploy" -gt 0 ]; then
+          ohai "Redeploy - uninstalling containers"
+					uninstall_containers
 				fi
-			fi
-		fi
+
+				if ! [ "$compOnlineVer" == "$compLocalVer" ]; then
+					ohai "Updating $DOCKER_COMPOSE_FILE"
+					cp -fr "$UPDATES_DIR/docker-compose.yml" "$DOCKER_COMPOSE_FILE"
+				fi
+
+				if ! [ "$depEnvLocalVer" == "$depEnvOnlineVer" ]; then
+					ohai "Updating $ENV_FILE_DEP"
+					dotenv-tool -pr -o "$ENV_FILE_DEP" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_DEP"
+				fi
+
+				if ! [ "$nsEnvLocalVer" == "$nsEnvOnlineVer" ]; then
+					ohai "Updating $ENV_FILE_NS"
+					dotenv-tool -pr -o "$ENV_FILE_NS" -i "$UPDATES_DIR/deployment.env" "$ENV_FILE_NS"
+				fi
+
+				echo "$lastDownload" >"$UPDATES_DIR/updated"
+
+				if ! [ "$instOnlineVer" == "$instLocalVer" ] || ! [ "$lastDownload" == "$updateInstalled" ]; then
+					ohai "Updating $TOOL_FILE"
+					cp -fr "$UPDATES_DIR/install.sh" "$TOOL_FILE"
+				fi
+
+				if [ "$redeploy" -gt 0 ]; then
+          ohai "Redeploy - installing containers"
+          install_containers
+				fi
+
+        hline
+				msgok "Aktualizacja zakończona"
+#		fi
 	fi
 }

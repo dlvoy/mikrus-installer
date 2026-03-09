@@ -162,7 +162,7 @@ get_watchdog_status() {
 
 watchdog_run() {
 	local host_hash
-	host_hash=$(printf '%s' "$(hostname)" | md5sum | awk '{print $1}' | cut -c1-8 | xargs printf '%d' 16 16)
+	host_hash=$(( 16#$(printf '%s' "$(hostname)" | md5sum | awk '{print $1}' | cut -c1-8) ))
 	local offset=$(( host_hash % 300 ))
 	echo "Watchdog delay: sleeping ${offset}s (host-based offset)"
 	sleep "$offset"

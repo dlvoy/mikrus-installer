@@ -95,6 +95,8 @@ main_menu() {
 
 		case $CHOICE in
 		"S)")
+			cachedMenuDomain=''
+			invalidate_domain_cache
 			status_menu
 			;;
 		"P)")

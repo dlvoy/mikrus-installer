@@ -261,6 +261,7 @@ watchdog_check() {
 
 		else
 			WATCHDOG_STATUS="domain_failed"
+			invalidate_domain_cache
 		fi
 
 	else

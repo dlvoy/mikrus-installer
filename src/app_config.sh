@@ -108,6 +108,8 @@ uninstall_menu() {
 			version_menu
 			;;
 		"E)")
+			cachedMenuDomain=''
+			invalidate_domain_cache
 
 			if ! [[ "$0" =~ .*"/usr/bin/nightscout-tool" ]]; then
 				okdlg "Opcja niedostępna" \

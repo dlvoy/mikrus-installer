@@ -200,6 +200,6 @@ parse_commandline_args() {
 	if [ "$WATCHDOGMODE" = "true" ]; then
 		startup_version
 		startup_debug
-		watchdog_check
+		watchdog_run
 	fi
 }

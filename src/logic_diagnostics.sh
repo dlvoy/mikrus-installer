@@ -94,6 +94,25 @@ gather_diagnostics() {
 		} >>"$SUPPORT_LOG"
 	fi
 
+	ohai "Zbieranie statusu operacji Docker"
+
+	local docker_op_status
+	docker_op_status=$(read_or_default "$DOCKER_OP_STATUS_FILE" "unknown")
+	{
+		echo "$LOG_DIVIDER"
+		echo " Ostatnia operacja Docker"
+		echo "$LOG_DIVIDER"
+		echo " Status: $docker_op_status"
+	} >>"$SUPPORT_LOG"
+
+	if [[ "$docker_op_status" == "failed" && -f "$DOCKER_OP_LOG" ]]; then
+		{
+			echo ""
+			echo " Docker operation log (ostatnie 100 linii):"
+			tail -n 100 "$DOCKER_OP_LOG"
+		} >>"$SUPPORT_LOG"
+	fi
+
 	ohai "Zbieranie logów usług"
 
 	{

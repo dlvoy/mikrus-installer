@@ -84,7 +84,7 @@ get_watchdog_status_code_live() {
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
 			cachedMenuDomain=$domain
-			local html=$(curl -Lks "$domain")
+			local html=$(curl -Lks --max-time 10 "$domain")
 
 			if [[ "$html" =~ github.com/nightscout/cgm-remote-monitor ]]; then
 				status="ok"
@@ -218,7 +218,7 @@ watchdog_check() {
 
 		local domainLen=${#domain}
 		if ((domainLen > 15)); then
-			local html=$(curl -iLsk "$domain")
+			local html=$(curl -iLks --max-time 15 "$domain")
 
 			WATCHDOG_STATUS="detection_failed"
 
@@ -303,6 +303,29 @@ watchdog_check() {
 	fi
 
 	echo "Watchdog observation: $WATCHDOG_STATUS"
+
+	# Check for docker operation failures and log them (once per new failure)
+	if [[ -f "$DOCKER_OP_STATUS_FILE" ]]; then
+		local docker_op_st
+		docker_op_st=$(cat "$DOCKER_OP_STATUS_FILE")
+		if [[ "$docker_op_st" == "failed" ]]; then
+			local marker_file="${DOCKER_OP_STATUS_FILE}.watchdog_logged"
+			local op_log_mtime
+			op_log_mtime=$(stat -c %Y "$DOCKER_OP_LOG" 2>/dev/null || echo 0)
+			local last_logged_mtime
+			last_logged_mtime=$(cat "$marker_file" 2>/dev/null || echo 0)
+			if [[ "$op_log_mtime" != "$last_logged_mtime" ]]; then
+				echo "$op_log_mtime" >"$marker_file"
+				{
+					hline
+					echo "[$WATCHDOG_TIME] Docker operation failure detected:"
+					if [[ -f "$DOCKER_OP_LOG" ]]; then
+						tail -n 50 "$DOCKER_OP_LOG"
+					fi
+				} >>"$WATCHDOG_FAILURES_FILE"
+			fi
+		fi
+	fi
 
 	# if [ "$WATCHDOG_LAST_STATUS" != "$WATCHDOG_STATUS" ]; then
 	echo "$WATCHDOG_TIME [$WATCHDOG_STATUS]" >>"$WATCHDOG_LOG_FILE"

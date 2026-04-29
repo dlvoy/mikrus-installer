@@ -75,6 +75,9 @@ do_cleanup_app_logs() {
 	rm -f "$WATCHDOG_LOG_FILE"
 	rm -f "$WATCHDOG_FAILURES_FILE"
 	rm -f "$WATCHDOG_CRON_LOG"
+	rm -f "$DOCKER_OP_LOG"
+	rm -f "$DOCKER_OP_STATUS_FILE"
+	rm -f "${DOCKER_OP_STATUS_FILE}.watchdog_logged"
 }
 
 cleanup_stats() {

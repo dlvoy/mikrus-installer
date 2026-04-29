@@ -24,6 +24,8 @@ WATCHDOG_TIME_FILE=/srv/nightscout/data/watchdog_time
 WATCHDOG_LOG_FILE=/srv/nightscout/data/watchdog.log
 WATCHDOG_FAILURES_FILE=/srv/nightscout/data/watchdog-failures.log
 WATCHDOG_CRON_LOG=/srv/nightscout/data/watchdog-cron.log
+DOCKER_OP_LOG=/srv/nightscout/data/docker-op.log
+DOCKER_OP_STATUS_FILE=/srv/nightscout/data/docker-op-status
 DOMAIN_NAME_FILE=/srv/nightscout/data/domain_name
 DOMAIN_UPDATE_TIMESTAMP=/srv/nightscout/data/domain_update_timestamp
 SUPPORT_LOG=/srv/nightscout/data/support.log
@@ -41,8 +43,8 @@ DISK_LOW_MAIL=5184000           # == 60 days in seconds
 DISK_CRITICAL_WARNING=104857600 # == 100 MiB
 DISK_CRITICAL_MAIL=604800       # == 7 days in seconds
 DOCKER_DOWN_MAIL=604800         # == 7 days in seconds
-SCRIPT_VERSION="1.11.0"         #auto-update
-SCRIPT_BUILD_TIME="2026.03.09"  #auto-update
+SCRIPT_VERSION="1.12.0"         #auto-update
+SCRIPT_BUILD_TIME="2026.04.29"  #auto-update
 FORCE_DEBUG_LOG=""
 NONINTERACTIVE_MODE="false"
 EXECUTED="true"

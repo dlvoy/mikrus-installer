@@ -59,14 +59,14 @@ _docker_op_succeeded() {
 }
 
 # Rotate DOCKER_OP_LOG when it gets too large (keep last 2000 lines).
+# Also ensures the log file exists.
 _rotate_docker_op_log() {
-	if [[ -f "$DOCKER_OP_LOG" ]]; then
-		local lc
-		lc=$(wc -l <"$DOCKER_OP_LOG")
-		if ((lc > 5000)); then
-			tail -2000 "$DOCKER_OP_LOG" >"${DOCKER_OP_LOG}.tmp"
-			mv -f "${DOCKER_OP_LOG}.tmp" "$DOCKER_OP_LOG"
-		fi
+	touch "$DOCKER_OP_LOG"
+	local lc
+	lc=$(wc -l <"$DOCKER_OP_LOG")
+	if ((lc > 5000)); then
+		tail -2000 "$DOCKER_OP_LOG" >"${DOCKER_OP_LOG}.tmp"
+		mv -f "${DOCKER_OP_LOG}.tmp" "$DOCKER_OP_LOG"
 	fi
 }
 
@@ -75,7 +75,7 @@ install_containers() {
 	local ts
 	ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 	local log_start
-	log_start=$(wc -l <"$DOCKER_OP_LOG" 2>/dev/null || echo 0)
+	log_start=$(wc -l <"$DOCKER_OP_LOG")
 	echo "[$ts] === install_containers ===" >>"$DOCKER_OP_LOG"
 
 	_run_docker_compose up --no-recreate -d
@@ -109,7 +109,7 @@ update_containers() {
 	local ts
 	ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 	local log_start
-	log_start=$(wc -l <"$DOCKER_OP_LOG" 2>/dev/null || echo 0)
+	log_start=$(wc -l <"$DOCKER_OP_LOG")
 	echo "[$ts] === update_containers ===" >>"$DOCKER_OP_LOG"
 
 	_run_docker_compose pull
